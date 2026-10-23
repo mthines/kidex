@@ -73,6 +73,28 @@ export function cleanTranscript(s) {
   return s.replace(/\[[^\]]*\]|\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+let installed = null;
+
+/** The voices `say` has, as [{name, locale}]. */
+export function voiceList() {
+  if (installed) return installed;
+  const out = spawnSync('say', ['-v', '?'], { encoding: 'utf8' }).stdout ?? '';
+  installed = out.split('\n').map(l => /^(.+?)\s{2,}([a-z]{2,3}_[A-Z0-9]{2,3})\s+#/.exec(l)).filter(Boolean)
+    .map(m => ({ name: m[1].trim(), locale: m[2] }));
+  return installed;
+}
+
+/**
+ * The best installed voice for a language: Premium, then Enhanced, then plain.
+ * `preferred` (from kidex.json) wins when it is installed; its better versions
+ * ("Sara (Premium)") are taken over the plain one.
+ */
+export function bestVoice(lang, preferred, list = voiceList()) {
+  const mine = list.filter(v => v.locale.startsWith(lang + '_'));
+  const rank = v => (/\(Premium\)/.test(v.name) ? 0 : /\(Enhanced\)/.test(v.name) ? 1 : 2) + (preferred && v.name.startsWith(preferred) ? 0 : 0.5);
+  return [...mine].sort((a, b) => rank(a) - rank(b))[0]?.name ?? null;
+}
+
 let speaking = null;
 
 /** Read text out loud. A new line cuts off the one before. */
@@ -81,7 +103,7 @@ export function speak(line, { lang = 'en', voices = {}, rate } = {}) {
   const clean = stripForSpeech(line);
   if (!clean || !has('say')) return Promise.resolve();
   const args = [];
-  const voice = voices[lang];
+  const voice = bestVoice(lang, voices[lang]);
   if (voice) args.push('-v', voice);
   if (rate) args.push('-r', String(rate));
   args.push(clean);

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { PNG } from 'pngjs';
 import { render, changedPictures, writePixels } from './pictures.mjs';
-import { cleanTranscript, guessLang, stripForSpeech } from './voice.mjs';
+import { cleanTranscript, guessLang, stripForSpeech, bestVoice } from './voice.mjs';
 import { isYes } from './session.mjs';
 
 test('a 16×16 picture is drawn 32 characters wide, two pixels per line', () => {
@@ -39,4 +39,15 @@ test('speech bits', () => {
   assert.equal(stripForSpeech('🎉 **Done!**'), 'Done!');
   assert.ok(isYes('Ja!') && isYes('yes') && isYes('gør det'));
   assert.ok(!isYes('yes but make it blue') && !isYes('nej'));
+});
+
+test('the best installed voice wins: Premium, then Enhanced, then the one kidex.json names', () => {
+  const list = [
+    { name: 'Sara', locale: 'da_DK' }, { name: 'Magnus (Enhanced)', locale: 'da_DK' },
+    { name: 'Samantha', locale: 'en_US' }, { name: 'Daniel', locale: 'en_GB' },
+  ];
+  assert.equal(bestVoice('da', 'Sara', list), 'Magnus (Enhanced)');
+  assert.equal(bestVoice('da', 'Sara', [...list, { name: 'Sara (Premium)', locale: 'da_DK' }]), 'Sara (Premium)');
+  assert.equal(bestVoice('en', 'Daniel', list), 'Daniel');
+  assert.equal(bestVoice('sv', 'Alva', list), null);
 });

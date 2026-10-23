@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { loadConfig } from '../src/config.mjs';
-import { abilities, MODEL, MODEL_URL } from '../src/voice.mjs';
+import { abilities, bestVoice, MODEL, MODEL_URL } from '../src/voice.mjs';
 
 const args = process.argv.slice(2);
 const flag = name => { const i = args.indexOf(`--${name}`); return i >= 0 ? args.splice(i, 2)[1] : undefined; };
@@ -68,10 +68,21 @@ function doctor() {
   row(Boolean(a.whisper), 'whisper.cpp (turns talking into text)', 'brew install whisper-cpp');
   row(a.model, `speech model (${MODEL})`, 'kidex setup');
   row(a.speak, 'say (talks back)', 'Kidex talks with macOS `say`');
-  const voices = spawnSync('say', ['-v', '?'], { encoding: 'utf8' }).stdout ?? '';
   const cfg = loadConfig(path.resolve(args[0] ?? '.'));
-  for (const [lang, v] of Object.entries(cfg.voices)) {
-    row(voices.split('\n').some(l => l.startsWith(v + ' ')), `voice "${v}" for ${lang}`, 'System Settings → Accessibility → Spoken Content → System voice → Manage voices');
+  const better = [];
+  for (const [lang, preferred] of Object.entries(cfg.voices)) {
+    const v = bestVoice(lang, preferred);
+    const good = v && /\((Premium|Enhanced)\)/.test(v);
+    row(Boolean(v), `voice for ${lang}: ${v ?? 'none'}${v && !good ? ' (basic: a better one can be downloaded)' : ''}`, 'see below');
+    if (!good) better.push(lang);
+  }
+  if (better.length) {
+    const names = { da: 'Dansk', en: 'English' };
+    console.log(`\nBetter voices are free from Apple, but only through System Settings (no program can download them):
+  1. System Settings → Accessibility → Spoken Content
+  2. Next to "System voice", click the ⓘ (or "Manage Voices…")
+  3. Find ${better.map(l => names[l] ?? l).join(' and ')}, and click ⬇ next to a voice marked Premium (best) or Enhanced
+  4. When it has downloaded, Kidex uses it by itself. No need to change kidex.json.`);
   }
   console.log(`\nProject: ${cfg.name} ${cfg.file ? `(${cfg.file})` : '(no kidex.json: only looking is allowed)'}`);
   console.log('The first time you talk, macOS asks to let your terminal use the microphone. Say yes.');
