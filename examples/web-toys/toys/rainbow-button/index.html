@@ -1,0 +1,7 @@
+<!doctype html>
+<title>Rainbow button</title>
+<style>
+  body { display: grid; place-items: center; height: 100vh; margin: 0; font-family: system-ui; transition: background 0.3s; }
+  button { font-size: 3rem; padding: 1rem 2rem; border-radius: 1rem; border: none; cursor: pointer; }
+</style>
+<button onclick="document.body.style.background = `hsl(${Math.random() * 360} 80% 70%)`">🌈 Click me!</button>

@@ -1,0 +1,12 @@
+{
+  "name": "Web toys",
+  "language": "auto",
+  "instructions": "Every toy is one folder in toys/ with an index.html that works on its own (no internet, no libraries). Keep it bright, big, and fun to click.",
+  "check": "node check.mjs",
+  "allow": ["node check.mjs", "open toys/"],
+  "actions": [
+    { "id": "new", "emoji": "✨", "label": { "en": "Make a new toy", "da": "Lav et nyt legetøj" }, "prompt": "Make a new toy in toys/<short-name>/index.html." },
+    { "id": "change", "emoji": "🔧", "label": { "en": "Change a toy", "da": "Lav et legetøj om" }, "pick": "toys/*", "prompt": "Change the toy in toys/{pick}/." },
+    { "id": "play", "emoji": "🎮", "label": { "en": "Play with a toy", "da": "Leg med et legetøj" }, "pick": "toys/*", "run": "open toys/{pick}/index.html" }
+  ]
+}
