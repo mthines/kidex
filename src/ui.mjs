@@ -69,6 +69,9 @@ const WORDS = {
   guideWorking: { en: '⏳ Kidex is building. Watch what happens!', da: '⏳ Kidex bygger. Kig med på hvad der sker!' },
   guideQuiz: { en: '🤔 While you wait: pick an answer with the arrows and ENTER', da: '🤔 Mens du venter: vælg et svar med pilene og ENTER' },
   guideTyping: { en: '⌨️ Type, then press ENTER', da: '⌨️ Skriv, og tryk ENTER' },
+  openIt: { en: 'open', da: 'åbn' },
+  running: { en: 'running', da: 'kører' },
+  backToKidex: { en: 'back to Kidex', da: 'tilbage til Kidex' },
   guideDone: { en: '🎉 What now? Pick one and press ENTER', da: '🎉 Hvad nu? Vælg en og tryk ENTER' },
 };
 
@@ -122,6 +125,7 @@ export function App({ cwd, config, quiet = false }) {
   const [cost, setCost] = useState(0);
   const [tick, setTick] = useState(0);
   const [onPanel, setOnPanel] = useState(false); // keys go to the panel's program, not the buttons
+  const [big, setBig] = useState(false); // away from the start screen, the panel is a strip on the right; TAB makes it big
   const [steps, setSteps] = useState([]); // the plan's big steps, ticked off while Claude builds
   const [stepAt, setStepAt] = useState(-1); // the step being worked on; steps.length when all are done
   const [quiz, setQuiz] = useState(null); // {question, choices, answer, explain, sel, picked}: something to think about while waiting
@@ -220,7 +224,7 @@ export function App({ cwd, config, quiet = false }) {
     }
     if (a.panel) {
       // A program that keeps running, like a dev screen: it fills the screen, the buttons move to the left.
-      openPanel(fill(a.panel, { pick: p }), { cwd, title: `${a.emoji} ${label(a.label, lang)}`, cols: columns - COLUMN - 2, rows: rows - 4 });
+      openPanel(fill(a.panel, { pick: p }), { cwd, title: `${a.emoji} ${label(a.label, lang)}`, cols: columns - COLUMN - 2, rows: rows - 5 });
       setScreen('home'); setSel(config.actions.indexOf(a)); setOnPanel(true);
       return;
     }
@@ -284,22 +288,26 @@ export function App({ cwd, config, quiet = false }) {
     recording.current?.cancel?.(); setEar('idle');
     await session.current?.stop();
     session.current = null;
-    setScreen('home'); setSel(0); setPrompt(null); setBusy(false); setActivity(null); setOnPanel(false);
+    setScreen('home'); setSel(0); setPrompt(null); setBusy(false); setActivity(null); setOnPanel(false); setBig(false);
   }
 
   const choices = screen === 'home' ? config.actions.map(a => `${a.emoji} ${label(a.label, lang)}`)
     : screen === 'pick' ? picks
     : prompt?.choices ?? [];
 
-  // While building, wide screens show what happens to the files on the right.
-  const showPanel = screen === 'chat' && columns >= 100 && Object.keys(files).length + (now ? 1 : 0) > 0;
-  const mainWidth = showPanel ? columns - PANEL : columns;
-
   // With a panel program running, the start screen is that program, with the buttons in a column on the left.
+  // Elsewhere it shrinks to a strip on the right, and TAB makes it big again (with Kidex as a card on the left).
   const panel = usePanel();
   const split = screen === 'home' && panel !== null;
-  const toPanel = split && onPanel && panel.code === null;
-  useEffect(() => resizePanel(columns - COLUMN - 2, rows - 4), [columns, rows]);
+  const strip = screen !== 'home' && panel !== null && columns >= 80;
+  const expanded = strip && big;
+  const toPanel = (split && onPanel || expanded) && panel.code === null;
+  useEffect(() => resizePanel(columns - COLUMN - 2, rows - 5), [columns, rows]);
+
+  // While building, wide screens show what happens to the files on the right.
+  const room = columns - (strip ? STRIP : 0);
+  const showPanel = screen === 'chat' && room >= 100 && Object.keys(files).length + (now ? 1 : 0) > 0;
+  const mainWidth = room - (showPanel ? PANEL : 0);
 
   useInput((input, key) => {
     if (typing !== null) {
@@ -309,8 +317,10 @@ export function App({ cwd, config, quiet = false }) {
       else if (input && !key.ctrl && !key.meta) setTyping(t => t + input);
       return;
     }
-    if (toPanel) { if (key.escape) escapePanel(() => setOnPanel(false)); else pressKey(input, key); return; }
+    if (toPanel) { if (key.escape) escapePanel(() => { setOnPanel(false); setBig(false); }); else pressKey(input, key); return; }
+    if (expanded) { if (key.escape || key.tab) setBig(false); return; } // the program has stopped
     if (split && key.tab) { setOnPanel(true); return; }
+    if (strip && key.tab) { setBig(true); return; }
     if (key.escape) { if (screen !== 'home') home(); return; }
     if ((input === 'l' || input === 'L') && ear === 'idle') { nextLanguage(); return; }
     if (screen === 'home' && input === 'q') { exit(); return; }
@@ -397,7 +407,7 @@ export function App({ cwd, config, quiet = false }) {
   }
 
   const guide = typing !== null ? w('guideTyping')
-    : screen !== 'chat' ? (toPanel ? null : w('guideHome'))
+    : screen !== 'chat' ? w('guideHome')
     : ear === 'recording' ? w('guideTalking')
     : ear === 'hearing' ? w('guideHearing')
     : busy ? (quiz && quiz.picked === null ? w('guideQuiz') : w('guideWorking'))
@@ -410,11 +420,14 @@ export function App({ cwd, config, quiet = false }) {
 
   const hints = typing !== null
     ? [['⏎', w('send')], ['ESC', w('back')]]
+    : expanded
+    ? [['ESC', `🧱 ${w('backToKidex')}`]]
     : screen === 'chat'
-    ? [!busy && ear === 'idle' && choices.length > 0 && ['⏎', w('choose')], !busy && ear !== 'hearing' && ['␣', ear === 'recording' ? w('done') : w('talk')], !busy && ear === 'idle' && ['T', w('type')], ['ESC', w('back')]]
+    ? [!busy && ear === 'idle' && choices.length > 0 && ['⏎', w('choose')], !busy && ear !== 'hearing' && ['␣', ear === 'recording' ? w('done') : w('talk')], !busy && ear === 'idle' && ['T', w('type')], strip && ['TAB', panel.title], ['ESC', w('back')]]
     : toPanel
     ? [['ESC', `🧱 ${w('buttons')}`]]
-    : [['⏎', w('choose')], split && ['TAB', panel.title], ['L', `${flag.flag} ${flag.name}`], screen === 'home' ? ['Q', w('quit')] : ['ESC', w('back')]];
+    : [['⏎', w('choose')], (split || strip) && ['TAB', panel.title], ['L', `${flag.flag} ${flag.name}`], screen === 'home' ? ['Q', w('quit')] : ['ESC', w('back')]];
+  const shownGuide = toPanel || expanded ? null : guide;
 
   return html`
     <${Box} width=${columns} height=${rows} flexDirection="column">
@@ -423,13 +436,18 @@ export function App({ cwd, config, quiet = false }) {
         <${Text} color="gray">${cost > 0 ? `$${cost.toFixed(2)}` : ''}<//>
       <//>
       <${Box} flexGrow=${1}>
-        <${Box} flexGrow=${split ? 0 : 1} width=${split ? COLUMN : undefined} flexDirection="column" alignItems="center" justifyContent="center">
-          ${middle}
-        <//>
-        ${split && html`<${TerminalView} panel=${panel} focused=${toPanel} width=${columns - COLUMN} height=${rows - 2} note=${panel.code !== null && w('stopped')} />`}
-        ${showPanel && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
+        ${expanded ? html`
+          <${Box} width=${COLUMN} flexDirection="column" alignItems="center" justifyContent="center">
+            <${KidexCard} text=${screen === 'pick' ? w('pick') : lastKidex?.text} status=${guide} color=${guideColor} tick=${tick} busy=${busy} />
+          <//>` : html`
+          <${Box} flexGrow=${split ? 0 : 1} width=${split ? COLUMN : undefined} flexDirection="column" alignItems="center" justifyContent="center">
+            ${middle}
+          <//>`}
+        ${(split || expanded) && html`<${TerminalView} panel=${panel} focused=${toPanel} width=${columns - COLUMN} height=${rows - 3} note=${panel.code !== null && w('stopped')} />`}
+        ${showPanel && !expanded && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
+        ${strip && !expanded && html`<${PanelStrip} panel=${panel} height=${rows - 3} open=${w('openIt')} stopped=${w('stopped')} running=${w('running')} />`}
       <//>
-      ${guide && html`<${Box} justifyContent="center"><${Text} bold color=${guideColor}>${guide}<//><//>`}
+      ${shownGuide && html`<${Box} justifyContent="center"><${Text} bold color=${guideColor}>${shownGuide}<//><//>`}
       <${Box} justifyContent="center" gap=${3}>
         ${hints.filter(Boolean).map(([k, v]) => html`<${Text} key=${k} color="gray"><${Text} inverse bold> ${k} <//> ${v}<//>`)}
       <//>
@@ -482,6 +500,32 @@ function Tiles({ items, sel, columns, small }) {
 }
 
 const COLUMN = 28;
+const STRIP = 30;
+
+/** The panel program, small: its title and the top of its screen. TAB opens it. */
+function PanelStrip({ panel, height, open, stopped, running: runningWord }) {
+  const running = panel.code === null;
+  const lines = panel.lines.slice(0, Math.max(0, height - 5));
+  return html`
+    <${Box} width=${STRIP} height=${height} flexDirection="column" borderStyle="round" borderColor="gray" paddingX=${1}>
+      <${Text} bold wrap="truncate-end">${panel.title}<//>
+      <${Text} color=${running ? 'green' : 'yellow'} wrap="truncate-end">${running ? `● ${runningWord}` : `■ ${stopped}`}<//>
+      <${Box} flexDirection="column" flexGrow=${1} overflow="hidden">
+        ${lines.map((l, i) => html`<${Text} key=${i} dimColor wrap="truncate-end">${l}<//>`)}
+      <//>
+      <${Text} color="gray"><${Text} inverse bold> TAB <//> ${open}<//>
+    <//>`;
+}
+
+/** Kidex, small, while the panel program is big: what Kidex said last, and whose turn it is. */
+function KidexCard({ text, status, color, tick, busy }) {
+  return html`
+    <${Box} width=${COLUMN - 2} flexDirection="column" borderStyle="round" borderColor=${color} paddingX=${1}>
+      <${Text} bold>🧱 Kidex ${busy ? ['⛏️ ', ' ⛏️'][tick % 2] : ''}<//>
+      ${text && html`<${Text} color="whiteBright" wrap="wrap">${text.length > 140 ? text.slice(0, 139) + '…' : text}<//>`}
+      ${status && html`<${Box} marginTop=${1}><${Text} color=${color} wrap="wrap">${status}<//><//>`}
+    <//>`;
+}
 
 /** The buttons as one short column, beside a panel program. sel -1: none chosen, the keys go to the program. */
 function Column({ items, sel }) {

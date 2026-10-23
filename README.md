@@ -55,7 +55,7 @@ node bin/kidex.mjs path/to/project
 | `Y` / `N` | yes or no to the plan |
 | `T` | type instead of talking |
 | `L` | language: 🇩🇰 Dansk → 🇬🇧 English → 🌍 Auto (remembered on this computer, in `~/.kidex/settings.json`) |
-| `TAB` | from the buttons to a `panel` program; `ESC` (when the program has no menu open to close) goes back |
+| `TAB` | from the buttons to a `panel` program; `ESC` (when the program has no menu open to close) goes back. Away from the start screen the program shrinks to a strip on the right, and `TAB` opens it big again |
 | `ESC` | back to the start |
 | `Q` | quit (on the start screen) |
 
