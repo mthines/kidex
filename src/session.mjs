@@ -3,16 +3,19 @@
 //
 // Events: {type: 'speak', text} | {type: 'ask', question, choices} | {type: 'plan', summary}
 //   | {type: 'activity', emoji, text} | {type: 'done', summary, pictures}
+//   | {type: 'file', action: 'read'|'write'|'edit'|'draw', file, isNew?, content?} | {type: 'files', files: [{file, isNew}]}
 //   | {type: 'turn', cost} | {type: 'blocked', why} | {type: 'error', message}
 
 import { query, createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { check } from './guard.mjs';
 import { fill } from './config.mjs';
 import { systemPrompt, firstMessage } from './prompt.mjs';
 import { changedPictures, writePixels } from './pictures.mjs';
+import { changedFiles } from './files.mjs';
 
 const YES = /^\s*(yes|yeah|yep|yup|ok|okay|sure|do it|go|ja|jo|jep|jeps|jaaa*|okay|gør det|kør|fedt|super)\b[\s!.]*$/i;
 export const isYes = s => YES.test(s);
@@ -69,7 +72,9 @@ export function createSession({ cwd, config, onEvent }) {
         if (!ok.ok) return { ...textResult(ok.why), isError: true };
         if (!file.toLowerCase().endsWith('.png')) return { ...textResult('The file must end in .png'), isError: true };
         const width = Math.max(...rows.map(r => [...r].length));
+        const isNew = !fs.existsSync(path.resolve(cwd, file));
         const abs = writePixels(path.resolve(cwd, file), rows, palette);
+        emit({ type: 'file', action: 'draw', file: path.relative(cwd, abs), isNew });
         emit({ type: 'activity', emoji: '🎨', text: path.basename(abs) });
         emit({ type: 'picture', file: abs });
         return textResult(`Wrote ${file} (${width}x${rows.length}).`);
@@ -90,7 +95,10 @@ export function createSession({ cwd, config, onEvent }) {
       allow: config.allow, deny: config.deny,
     });
     if (!r.ok) emit({ type: 'blocked', why: r.why, tool: input.tool_name });
-    else showActivity(input.tool_name, input.tool_input ?? {});
+    else {
+      showActivity(input.tool_name, input.tool_input ?? {});
+      showFile(input.tool_name, input.tool_input ?? {});
+    }
     return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: r.ok ? 'allow' : 'deny', permissionDecisionReason: r.ok ? undefined : r.why } };
   };
 
@@ -108,6 +116,24 @@ export function createSession({ cwd, config, onEvent }) {
       : null;
     if (a) emit({ type: 'activity', ...a });
   }
+
+  // For the files panel: what Claude reads and writes, and what commands made.
+  function showFile(name, input) {
+    const abs = input.file_path ?? input.notebook_path;
+    if (!abs) return;
+    const file = path.relative(cwd, path.resolve(cwd, abs));
+    if (name === 'Read') emit({ type: 'file', action: 'read', file });
+    else if (name === 'Write') emit({ type: 'file', action: 'write', file, isNew: !fs.existsSync(path.resolve(cwd, abs)), content: input.content });
+    else if (name === 'Edit' || name === 'MultiEdit') emit({ type: 'file', action: 'edit', file, isNew: false, content: input.new_string ?? input.edits?.[0]?.new_string });
+  }
+
+  const afterCommand = async input => {
+    if (input.tool_name === 'Bash') {
+      const files = changedFiles(cwd, startedAt).map(f => ({ file: path.relative(cwd, f.file), isNew: f.isNew }));
+      if (files.length) emit({ type: 'files', files });
+    }
+    return {};
+  };
 
   function makeBranch() {
     if (!config.git.branch) return;
@@ -151,7 +177,7 @@ export function createSession({ cwd, config, onEvent }) {
         systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(config) },
         mcpServers: { kidex },
         disallowedTools: ['WebFetch', 'WebSearch', 'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', 'Skill', 'SlashCommand'],
-        hooks: { PreToolUse: [{ hooks: [guard] }] },
+        hooks: { PreToolUse: [{ hooks: [guard] }], PostToolUse: [{ hooks: [afterCommand] }] },
         canUseTool: async (name) => ({ behavior: 'deny', message: `${name} is not available in Kidex.` }),
         stderr: () => {},
       },

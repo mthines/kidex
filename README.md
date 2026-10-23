@@ -15,6 +15,8 @@ A voice-first coding buddy for kids. They pick what they want to do, press space
   SPACE  🎤 snak   T  ⌨️  skriv   ESC  🏠 tilbage
 ```
 
+While Claude builds, a panel on the right (in a window at least 100 columns wide) shows the files it makes ✨ and changes 🔨 as a little tree. The file it's working on right now gets one sentence about what that kind of file is for and a peek at a few lines of it: a first look at what code is, without a wall of it.
+
 Kidex knows nothing about any particular project. A project plugs in with a `kidex.json` (its buttons, its test command, and what Claude may run) and its usual `CLAUDE.md`. Claude follows that file just as it would for a grown-up.
 
 ## Setup (macOS)
@@ -43,6 +45,7 @@ node bin/kidex.mjs path/to/project
 | `Y` / `N` | yes or no to the plan |
 | `T` | type instead of talking |
 | `L` | language: 🇩🇰 Dansk → 🇬🇧 English → 🌍 Auto (remembered on this computer, in `~/.kidex/settings.json`) |
+| `P` | hide or show the side panel of a `panel` button (the command keeps running) |
 | `ESC` | back to the start |
 | `Q` | quit (on the start screen) |
 
@@ -65,16 +68,20 @@ Put a `kidex.json` in the project's folder:
   "effort": "medium",
   "voices": { "da": "Sara", "en": "Samantha" },
   "git": { "branch": "kidex/{date}", "commit": true },  // optional: work on a branch, commit at the end
+  "explain": { "kit.json": { "en": "What you get to try the mod", "da": "Det du får, når du prøver modet" } },
   "actions": [
     { "id": "new", "emoji": "✨", "label": { "en": "Make a mod", "da": "Lav et mod" }, "prompt": "Make a new mod." },
     { "id": "change", "emoji": "🔧", "label": "Change a mod", "pick": "addons/*", "prompt": "Change the mod in addons/{pick}." },
-    { "id": "try", "emoji": "🎮", "label": "Try a mod", "pick": "addons/*", "run": "./mc kit {pick}" }
+    { "id": "try", "emoji": "🎮", "label": "Try a mod", "pick": "addons/*", "run": "./mc kit {pick}" },
+    { "id": "server", "emoji": "🖥️", "label": "Start the server", "panel": "./mc dev" }
   ]
 }
 ```
 
+- `explain` (optional) says in kid words what a project's own files are, for the files panel: keys are file names (`"kit.json"`) or folders (`"textures/"`), values a string or `{en, da}`. Without it, files are explained by type (code, settings, picture, test…).
 - `pick` first shows the folders matching `dir/*` as buttons, and `{pick}` is replaced by the chosen one.
 - `run` runs a plain command without Claude, e.g. to open or play something.
+- `panel` runs a command that keeps going, like a dev server, and shows its output in a panel on the right (on screens at least 100 columns wide). Pressing the button again shows the panel if `P` hid it; the command stops when Kidex quits. It gets no keyboard and no terminal, so a command with its own full-screen view should print plain lines when it isn't in a terminal.
 
 Without a `kidex.json`, Kidex shows three general buttons and Claude may only look, not run anything.
 
@@ -109,4 +116,5 @@ It prints one JSON event per line and exits 0 if Claude finished with `all_done`
 | `src/guard.mjs` | what Claude may do |
 | `src/voice.mjs` | ffmpeg + whisper.cpp in, `say` out |
 | `src/pictures.mjs` | draws the PNGs Claude made, right in the terminal |
+| `src/panel.mjs` | runs a `panel` button's command and shows its output on the right |
 | `src/prompt.mjs` | how Claude should talk to kids |

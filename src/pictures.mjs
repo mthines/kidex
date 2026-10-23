@@ -4,28 +4,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { PNG } from 'pngjs';
-
-const SKIP = new Set(['node_modules', '.git', 'dist', 'build', '.cache']);
+import { changedFiles } from './files.mjs';
 
 /** PNG files under cwd changed since `since` (ms), newest first. */
-export function changedPictures(cwd, since, { max = 4, depth = 7 } = {}) {
-  const found = [];
-  const walk = (dir, d) => {
-    if (d > depth) return;
-    let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (SKIP.has(e.name) || e.name.startsWith('.')) continue;
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) walk(p, d + 1);
-      else if (e.name.toLowerCase().endsWith('.png')) {
-        const t = fs.statSync(p).mtimeMs;
-        if (t >= since) found.push({ file: p, t });
-      }
-    }
-  };
-  walk(cwd, 0);
-  return found.sort((a, b) => b.t - a.t).slice(0, max).map(f => f.file);
+export function changedPictures(cwd, since, { max = 4 } = {}) {
+  return changedFiles(cwd, since, { filter: f => f.toLowerCase().endsWith('.png'), max }).map(f => f.file);
 }
 
 /** Pixel art → PNG. rows are strings, one character per pixel, looked up in palette ("#rrggbb" or "#rrggbbaa"). */

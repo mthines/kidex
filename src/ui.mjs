@@ -5,9 +5,12 @@ import { Box, Text, useApp, useInput, useWindowSize } from 'ink';
 import htm from 'htm';
 import { createSession } from './session.mjs';
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 import { text as label, pickChoices, fill, loadSettings, saveSettings } from './config.mjs';
 import { abilities, startRecording, transcribe, speak, hush, guessLang } from './voice.mjs';
 import { render as renderPicture } from './pictures.mjs';
+import { describe, peek } from './files.mjs';
+import { openPanel, togglePanel, usePanel, CommandPanel } from './panel.mjs';
 
 const html = htm.bind(React.createElement);
 
@@ -29,6 +32,13 @@ const WORDS = {
   back: { en: 'back', da: 'tilbage' },
   quit: { en: 'quit', da: 'slut' },
   working: { en: 'Working on it', da: 'Jeg arbejder på det' },
+  yourFiles: { en: 'Files', da: 'Filer' },
+  newFile: { en: 'new', da: 'ny' },
+  changedFile: { en: 'changed', da: 'ændret' },
+  read: { en: 'Looking at', da: 'Kigger i' },
+  write: { en: 'Making', da: 'Laver' },
+  edit: { en: 'Changing', da: 'Ændrer' },
+  draw: { en: 'Drawing', da: 'Tegner' },
   more: { en: 'Want to change something? Press space and talk.', da: 'Vil du lave noget om? Tryk mellemrum og snak.' },
   fun: { en: 'Have fun!', da: 'God fornøjelse!' },
   again: { en: "I didn't hear anything. Press space and try again!", da: 'Jeg hørte ikke noget. Tryk mellemrum og prøv igen!' },
@@ -78,6 +88,8 @@ export function App({ cwd, config, quiet = false }) {
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState(null);
   const [drawn, setDrawn] = useState([]); // pictures Claude drew this session, shown while it works
+  const [files, setFiles] = useState({}); // file → {isNew, t}: what Claude made or changed this session
+  const [now, setNow] = useState(null); // {action, file, content}: the file Claude is working on
   const [ear, setEar] = useState('idle'); // idle | recording | hearing
   const [typing, setTyping] = useState(null);
   const [cost, setCost] = useState(0);
@@ -111,6 +123,17 @@ export function App({ cwd, config, quiet = false }) {
         setPrompt({ kind: 'plan', choices: [`👍 ${w('yes')}`, `👎 ${w('no')}`] }); setSel(0); setBusy(false); break;
       case 'activity':
         setActivity(e); break;
+      case 'file':
+        setNow(e);
+        if (e.action !== 'read') setFiles(f => ({ ...f, [e.file]: { isNew: f[e.file]?.isNew ?? e.isNew, t: Date.now() } }));
+        break;
+      case 'files':
+        setFiles(f => {
+          const next = { ...f };
+          for (const x of e.files) if (!next[x.file]) next[x.file] = { isNew: x.isNew, t: Date.now() };
+          return next;
+        });
+        break;
       case 'picture':
         setDrawn(d => [...d.filter(f => f !== e.file), e.file].slice(-3)); break;
       case 'blocked':
@@ -133,7 +156,13 @@ export function App({ cwd, config, quiet = false }) {
       setScreen('home'); setSel(0);
       return;
     }
-    setAction(a); setPick(p); setLines([]); setDrawn([]); setScreen('chat');
+    if (a.panel) {
+      // A command that keeps running, like a dev server: its output shows on the right.
+      openPanel(fill(a.panel, { pick: p }), { cwd, title: `${a.emoji} ${label(a.label, lang)}` });
+      setScreen('home'); setSel(0);
+      return;
+    }
+    setAction(a); setPick(p); setLines([]); setDrawn([]); setFiles({}); setNow(null); setScreen('chat');
     setPrompt({ kind: 'first' });
     session.current = createSession({ cwd, config: { ...config, language }, onEvent });
     say('kidex', w('tell')); voice(w('tell'));
@@ -185,6 +214,12 @@ export function App({ cwd, config, quiet = false }) {
     : screen === 'pick' ? picks
     : prompt?.choices ?? [];
 
+  // While building, wide screens show what happens to the files on the right.
+  const showPanel = screen === 'chat' && columns >= 100 && Object.keys(files).length + (now ? 1 : 0) > 0;
+  const panel = usePanel();
+  const showCommand = panel && !panel.hidden && columns >= 100;
+  const mainWidth = showPanel || showCommand ? columns - PANEL : columns;
+
   useInput((input, key) => {
     if (typing !== null) {
       if (key.return) { const t = typing; setTyping(null); submit(t); }
@@ -195,11 +230,12 @@ export function App({ cwd, config, quiet = false }) {
     }
     if (key.escape) { if (screen !== 'home') home(); return; }
     if ((input === 'l' || input === 'L') && ear === 'idle') { nextLanguage(); return; }
+    if ((input === 'p' || input === 'P') && panel) { togglePanel(); return; }
     if (screen === 'home' && input === 'q') { exit(); return; }
 
     const n = choices.length;
     // Tiles sit in a grid: left/right move one, up/down a whole row.
-    const row = perRowFor(n, columns, screen === 'pick');
+    const row = perRowFor(n, mainWidth, screen === 'pick');
     if (n && key.rightArrow) { setSel(s => (s + 1) % n); return; }
     if (n && key.leftArrow) { setSel(s => (s - 1 + n) % n); return; }
     if (n && key.downArrow) { setSel(s => (s + row < n ? s + row : s % row)); return; }
@@ -233,21 +269,21 @@ export function App({ cwd, config, quiet = false }) {
 
   let middle;
   if (screen === 'home') {
-    middle = html`
+    middle = html`<${Box} flexDirection="column" alignItems="center">
       <${Title}>${w('hello')}<//>
-      <${Tiles} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${sel} columns=${columns} />`;
+      <${Tiles} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${sel} columns=${mainWidth} /><//>`;
   } else if (screen === 'pick') {
-    middle = html`
+    middle = html`<${Box} flexDirection="column" alignItems="center">
       <${Title}>${w('pick')}<//>
-      <${Tiles} items=${picks.map(p => ({ emoji: '🧩', text: nice(p) }))} sel=${sel} columns=${columns} small />`;
+      <${Tiles} items=${picks.map(p => ({ emoji: '🧩', text: nice(p) }))} sel=${sel} columns=${mainWidth} small /><//>`;
   } else {
     const shown = prompt?.kind === 'done' ? prompt.pictures : drawn;
-    middle = html`
+    middle = html`<${Box} flexDirection="column" alignItems="center">
       ${lastKid && html`<${Text} color="cyan">🧒 ${lastKid.text}<//>`}
-      ${lastKidex && html`<${Bubble} error=${lastKidex.who === 'error'} width=${Math.min(72, columns - 8)}>${lastKidex.text}<//>`}
+      ${lastKidex && html`<${Bubble} error=${lastKidex.who === 'error'} width=${Math.min(72, mainWidth - 8)}>${lastKidex.text}<//>`}
       <${Pictures} files=${shown} />
       ${busy && html`<${Working} tick=${tick} activity=${activity} label=${w('working')} />`}
-      ${!busy && ear === 'idle' && typing === null && choices.length > 0 && html`<${Tiles} items=${choices.map(splitEmoji)} sel=${sel} columns=${columns} />`}
+      ${!busy && ear === 'idle' && typing === null && choices.length > 0 && html`<${Tiles} items=${choices.map(splitEmoji)} sel=${sel} columns=${mainWidth} />`}
       ${ear === 'recording' && html`
         <${Box} borderStyle="bold" borderColor="red" paddingX=${4} paddingY=${1} marginTop=${1} flexDirection="column" alignItems="center">
           <${Text} color="red" bold>${tick % 2 ? '🔴' : '⭕'}  ${w('listening')}<//>
@@ -255,16 +291,16 @@ export function App({ cwd, config, quiet = false }) {
         <//>`}
       ${ear === 'hearing' && html`<${Box} marginTop=${1}><${Text} color="yellow" bold>👂 ${w('hearing')}<//><//>`}
       ${typing !== null && html`
-        <${Box} borderStyle="round" borderColor="cyan" paddingX=${2} marginTop=${1} width=${Math.min(72, columns - 8)}>
+        <${Box} borderStyle="round" borderColor="cyan" paddingX=${2} marginTop=${1} width=${Math.min(72, mainWidth - 8)}>
           <${Text}>${typing}${tick % 2 ? '▌' : ' '}<//>
-        <//>`}`;
+        <//>`}<//>`;
   }
 
   const hints = typing !== null
     ? [['⏎', w('send')], ['ESC', w('back')]]
     : screen === 'chat'
     ? [!busy && ear === 'idle' && choices.length > 0 && ['⏎', w('choose')], !busy && ear !== 'hearing' && ['␣', ear === 'recording' ? w('done') : w('talk')], !busy && ear === 'idle' && ['T', w('type')], ['ESC', w('back')]]
-    : [['⏎', w('choose')], ['L', `${flag.flag} ${flag.name}`], screen === 'home' ? ['Q', w('quit')] : ['ESC', w('back')]];
+    : [['⏎', w('choose')], ['L', `${flag.flag} ${flag.name}`], panel && ['P', panel.title], screen === 'home' ? ['Q', w('quit')] : ['ESC', w('back')]];
 
   return html`
     <${Box} width=${columns} height=${rows} flexDirection="column">
@@ -272,8 +308,15 @@ export function App({ cwd, config, quiet = false }) {
         <${Text} color="gray">🧱 Kidex · ${config.name}<//>
         <${Text} color="gray">${cost > 0 ? `$${cost.toFixed(2)}` : ''}<//>
       <//>
-      <${Box} flexGrow=${1} flexDirection="column" alignItems="center" justifyContent="center">
-        ${middle}
+      <${Box} flexGrow=${1}>
+        <${Box} flexGrow=${1} flexDirection="column" alignItems="center" justifyContent="center">
+          ${middle}
+        <//>
+        ${(showPanel || showCommand) && html`
+          <${Box} flexDirection="column">
+            ${showPanel && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
+            ${showCommand && html`<${CommandPanel} panel=${panel} width=${PANEL} height=${showPanel ? 10 : rows - 2} />`}
+          <//>`}
       <//>
       <${Box} justifyContent="center" gap=${3}>
         ${hints.filter(Boolean).map(([k, v]) => html`<${Text} key=${k} color="gray"><${Text} inverse bold> ${k} <//> ${v}<//>`)}
@@ -352,5 +395,46 @@ function Pictures({ files = [] }) {
   return html`
     <${Box} gap=${2} marginBottom=${1}>
       ${drawn.map(({ f, lines }) => html`<${Box} key=${f} flexDirection="column">${lines.map((l, i) => html`<${Text} key=${i}>${l}<//>`)}<//>`)}
+    <//>`;
+}
+
+const PANEL = 42;
+
+/**
+ * The files panel: a little tree of what Claude made (✨) or changed (🔨),
+ * and, for the file it is working on now, what kind of file it is and a peek inside.
+ */
+function FilesPanel({ files, now, lang, explain, words }) {
+  const list = Object.entries(files).sort((a, b) => a[0].localeCompare(b[0])).slice(-14);
+  const byDir = {};
+  for (const [file, info] of list) {
+    const dir = path.dirname(file);
+    (byDir[dir] ??= []).push({ file, ...info });
+  }
+  const short = d => d === '.' ? '' : d.split('/').slice(-2).join('/') + '/';
+  const about = now && describe(now.file, lang, explain);
+  const code = now && now.action !== 'read' && now.action !== 'draw' ? peek(now.content, { width: PANEL - 6 }) : [];
+  return html`
+    <${Box} width=${PANEL} flexDirection="column" borderStyle="round" borderColor="gray" paddingX=${1} marginRight=${1}>
+      <${Text} bold color="gray">📁 ${words('yourFiles')}<//>
+      ${Object.entries(byDir).map(([dir, items]) => html`
+        <${Box} key=${dir} flexDirection="column" marginTop=${1}>
+          ${short(dir) && html`<${Text} color="blue" wrap="truncate-start">${short(dir)}<//>`}
+          ${items.map(f => {
+            const here = now?.file === f.file;
+            return html`<${Text} key=${f.file} wrap="truncate-end" bold=${here} color=${here ? 'whiteBright' : undefined}>
+              ${' '}${describe(f.file, lang, explain).icon} ${path.basename(f.file)} <${Text} color=${f.isNew ? 'green' : 'yellow'}>${f.isNew ? '✨' : '🔨'}<//>${here ? ' ◀' : ''}
+            <//>`;
+          })}
+        <//>`)}
+      ${now && html`
+        <${Box} flexDirection="column" marginTop=${1} borderStyle="single" borderTop borderBottom=${false} borderLeft=${false} borderRight=${false} borderColor="gray">
+          <${Text} color="yellow" wrap="truncate-end">${about.icon} ${words(now.action)} ${path.basename(now.file)}<//>
+          <${Text} color="gray" wrap="wrap">${about.text}<//>
+          ${code.length > 0 && html`
+            <${Box} flexDirection="column" marginTop=${1}>
+              ${code.map((l, i) => html`<${Text} key=${i} color="cyan" dimColor wrap="truncate-end">${l}<//>`)}
+            <//>`}
+        <//>`}
     <//>`;
 }
