@@ -1,8 +1,9 @@
 // One conversation between a kid and Claude, without any UI. The UI (or the
 // headless runner) listens to events and calls answer() / say().
 //
-// Events: {type: 'speak', text} | {type: 'ask', question, choices} | {type: 'plan', summary}
-//   | {type: 'activity', emoji, text} | {type: 'done', summary, pictures}
+// Events: {type: 'speak', text, step?, kind?} | {type: 'ask', question, choices} | {type: 'plan', summary, steps}
+//   | {type: 'quiz', question, choices, answer, explain} | {type: 'approved'}
+//   | {type: 'activity', emoji, text} | {type: 'done', summary, name, pictures}
 //   | {type: 'file', action: 'read'|'write'|'edit'|'draw', file, isNew?, content?} | {type: 'files', files: [{file, isNew}]}
 //   | {type: 'turn', cost} | {type: 'blocked', why} | {type: 'error', message}
 
@@ -54,24 +55,37 @@ export function createSession({ cwd, config, onEvent }) {
         emit({ type: 'ask', question, choices: choices ?? [] });
         return textResult(`The kid answered: "${await nextAnswer()}"`);
       }),
-      tool('show_plan', 'Tell the child, in 1-3 short sentences, what you will build, and ask if that is right. Files and commands stay locked until they say yes.', {
+      tool('show_plan', 'Tell the child, in 1-3 short sentences, what you will build, and ask if that is right. Files and commands stay locked until they say yes. steps: the 2-5 big steps you will take, shown as a checklist that ticks off while you work.', {
         summary: z.string(),
-      }, async ({ summary }) => {
-        emit({ type: 'plan', summary });
+        steps: z.array(z.object({ emoji: z.string(), text: z.string().describe('2-5 kid words, like "Draw the sword"') })).min(2).max(5).optional(),
+      }, async ({ summary, steps }) => {
+        emit({ type: 'plan', summary, steps: steps ?? [] });
         const answer = await nextAnswer();
         if (answer === '👍' || isYes(answer)) {
           planApproved = true;
           makeBranch();
-          return textResult('The kid said YES. Build it now. Use tell_kid at each big step.');
+          emit({ type: 'approved' });
+          return textResult('The kid said YES. Build it now. Use tell_kid at each big step, with step set to the step you start. While you work, quiz_kid now and then gives them something to think about.');
         }
         if (answer === '👎') return textResult('The kid said NO. Ask them (ask_kid) what they want instead, then show_plan again.');
         return textResult(`The kid did not say yes; they said: "${answer}". Adjust the plan to that and call show_plan again.`);
       }),
       tool('tell_kid', 'Tell the child one short sentence about what you are doing now. Read aloud. Does not wait for an answer.', {
         text: z.string(),
-      }, async ({ text }) => {
-        emit({ type: 'speak', text });
+        step: z.number().int().min(1).optional().describe('The plan step (1 = first) you are starting now; earlier steps get a tick'),
+        kind: z.enum(['bug', 'fixed']).optional().describe('"bug" when a test found a problem, "fixed" when you fixed it'),
+      }, async ({ text, step, kind }) => {
+        emit({ type: 'speak', text, step, kind });
         return textResult('Told them.');
+      }),
+      tool('quiz_kid', 'While you work, give the child a small fun question about what you are doing (how code, pictures, or games work), with 2-3 choices. It does not wait: they answer on screen and see the explanation, and you keep working. At most one at a time, and not right after another.', {
+        question: z.string(),
+        choices: z.array(z.string()).min(2).max(3),
+        answer: z.number().int().min(0).describe('Index of the right choice (0 = first)'),
+        explain: z.string().describe('One short sentence, shown after they answer'),
+      }, async ({ question, choices, answer, explain }) => {
+        emit({ type: 'quiz', question, choices, answer: Math.min(answer, choices.length - 1), explain });
+        return textResult('Shown. Keep working; do not wait for their answer.');
       }),
       tool('draw_picture', 'Write a PNG picture (pixel art) without running a script. rows: one string per pixel row, one character per pixel; each character is a key of palette ("." or any key missing from palette is see-through). Use the size the project needs (e.g. 16x16).', {
         file: z.string().describe('Path of the .png to write, inside the project'),
@@ -89,11 +103,12 @@ export function createSession({ cwd, config, onEvent }) {
         emit({ type: 'picture', file: abs });
         return textResult(`Wrote ${file} (${width}x${rows.length}).`);
       }),
-      tool('all_done', 'Finish: tell the child what you made and how to try it, in 1-3 short sentences.', {
+      tool('all_done', 'Finish: tell the child what you made and how to try it, in 1-3 short sentences. name: what you made, in 1-4 words, for the celebration.', {
         summary: z.string(),
-      }, async ({ summary }) => {
+        name: z.string().optional(),
+      }, async ({ summary, name }) => {
         commit(summary);
-        emit({ type: 'done', summary, pictures: changedPictures(cwd, startedAt) });
+        emit({ type: 'done', summary, name, pictures: changedPictures(cwd, startedAt) });
         return textResult('Told them. Now stop and wait; they may ask for changes.');
       }),
     ],

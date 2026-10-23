@@ -61,6 +61,14 @@ node bin/kidex.mjs path/to/project
 
 To try it without a project, use `examples/web-toys`: kids make small browser toys there.
 
+What the kid sees along the way:
+
+- **Whose turn it is.** A line at the bottom always says what to do now ("Your turn! Press SPACE and talk", "Kidex is building…"). On the kid's turn a 🎤 pulses; while they talk, a bar shows how loud they are, so they can see the mic hears them.
+- **The plan as a checklist.** Claude's plan comes with 2–5 big steps, which tick off (✅ 👉 ⬜) while it builds.
+- **Something to do while waiting.** Now and then Claude asks a small quiz question about what it is doing; the kid answers with the arrows, and sees why.
+- **Bugs as puzzles.** When a test fails, Kidex says "the test robot found a bug" (🐛), sometimes lets the kid guess why, and says what fixed it (🔧). Errors say it's OK to try again; the real error stays small, for grown-ups.
+- **A party when it's made.** Confetti, a "You made it!" banner with the name of the thing, and a sound. Smaller sparkles when the plan gets a yes, a bug is fixed, or a quiz answer is right. Then: 🔍 how does it work?, 🔧 change something, or 🏠 done.
+
 ## Hook up a project
 
 Put a `kidex.json` in the project's folder:
@@ -122,7 +130,7 @@ It prints one JSON event per line and exits 0 if Claude finished with `all_done`
 | File | |
 | --- | --- |
 | `src/ui.mjs` | the screen ([Ink](https://github.com/vadimdemedes/ink)) |
-| `src/session.mjs` | one conversation: Claude Agent SDK `query()` with Kidex's own tools (`ask_kid`, `show_plan`, `tell_kid`, `draw_picture`, `all_done`). `draw_picture` writes pixel art to a PNG, so Claude never needs to run a script to make a picture. |
+| `src/session.mjs` | one conversation: Claude Agent SDK `query()` with Kidex's own tools (`ask_kid`, `show_plan` with its steps, `tell_kid` with the step and bug/fixed moments, `quiz_kid`, `draw_picture`, `all_done`). `draw_picture` writes pixel art to a PNG, so Claude never needs to run a script to make a picture. |
 | `src/guard.mjs` | what Claude may do |
 | `src/voice.mjs` | ffmpeg + whisper.cpp in, `say` out |
 | `src/pictures.mjs` | draws the PNGs Claude made, right in the terminal |

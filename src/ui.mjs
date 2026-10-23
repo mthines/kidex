@@ -7,7 +7,7 @@ import { createSession } from './session.mjs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { text as label, pickChoices, fill, loadSettings, saveSettings } from './config.mjs';
-import { abilities, startRecording, transcribe, speak, hush, guessLang, warmUp } from './voice.mjs';
+import { abilities, startRecording, transcribe, speak, hush, guessLang, warmUp, chime } from './voice.mjs';
 import { render as renderPicture } from './pictures.mjs';
 import { describe, peek } from './files.mjs';
 import { openPanel, resizePanel, pressKey, escapePanel, usePanel, TerminalView } from './panel.mjs';
@@ -45,6 +45,31 @@ const WORDS = {
   fun: { en: 'Have fun!', da: 'God fornøjelse!' },
   again: { en: "I didn't hear anything. Press space and try again!", da: 'Jeg hørte ikke noget. Tryk mellemrum og prøv igen!' },
   noMic: { en: 'No microphone helper here, so press T and type.', da: 'Mikrofonen virker ikke her, så tryk T og skriv.' },
+  oops: { en: 'Oops, something got stuck. Try saying it again, or ask a grown-up.', da: 'Ups, noget drillede. Prøv at sige det igen, eller spørg en voksen.' },
+  madeIt: { en: 'You made it!', da: 'Du lavede det!' },
+  how: { en: 'How does it work?', da: 'Hvordan virker det?' },
+  change: { en: 'Change something', da: 'Lav noget om' },
+  finished: { en: 'Done for now', da: 'Færdig for nu' },
+  whatChange: { en: 'What do you want to change? Press space and tell me.', da: 'Hvad vil du lave om? Tryk mellemrum og fortæl mig det.' },
+  explainIt: {
+    en: 'How does what you made work? Show me the most important parts, simply.',
+    da: 'Hvordan virker det, du lavede? Vis mig de vigtigste dele, helt enkelt.',
+  },
+  whileYouWait: { en: 'While you wait…', da: 'Mens du venter…' },
+  correct: { en: 'Right!', da: 'Rigtigt!' },
+  notQuite: { en: 'Not quite!', da: 'Ikke helt!' },
+  plan: { en: 'The plan', da: 'Planen' },
+  // The line at the bottom that says what to do now.
+  guideHome: { en: '👉 Pick with the arrow keys, then press ENTER', da: '👉 Vælg med piletasterne, og tryk ENTER' },
+  guideTurn: { en: '👉 Your turn! Press SPACE and talk', da: '👉 Din tur! Tryk MELLEMRUM og snak' },
+  guideChoose: { en: '👉 Your turn! Pick an answer and press ENTER, or press SPACE and talk', da: '👉 Din tur! Vælg et svar og tryk ENTER, eller tryk MELLEMRUM og snak' },
+  guidePlan: { en: '👉 Your turn! Is the plan good? 👍 or 👎', da: '👉 Din tur! Er planen god? 👍 eller 👎' },
+  guideTalking: { en: '🔴 Talk now! Press SPACE when you are done', da: '🔴 Snak nu! Tryk MELLEMRUM når du er færdig' },
+  guideHearing: { en: '👂 Wait a moment, I am writing down what you said…', da: '👂 Vent lidt, jeg skriver det ned, du sagde…' },
+  guideWorking: { en: '⏳ Kidex is building. Watch what happens!', da: '⏳ Kidex bygger. Kig med på hvad der sker!' },
+  guideQuiz: { en: '🤔 While you wait: pick an answer with the arrows and ENTER', da: '🤔 Mens du venter: vælg et svar med pilene og ENTER' },
+  guideTyping: { en: '⌨️ Type, then press ENTER', da: '⌨️ Skriv, og tryk ENTER' },
+  guideDone: { en: '🎉 What now? Pick one and press ENTER', da: '🎉 Hvad nu? Vælg en og tryk ENTER' },
 };
 
 const LANGUAGES = [
@@ -97,36 +122,63 @@ export function App({ cwd, config, quiet = false }) {
   const [cost, setCost] = useState(0);
   const [tick, setTick] = useState(0);
   const [onPanel, setOnPanel] = useState(false); // keys go to the panel's program, not the buttons
+  const [steps, setSteps] = useState([]); // the plan's big steps, ticked off while Claude builds
+  const [stepAt, setStepAt] = useState(-1); // the step being worked on; steps.length when all are done
+  const [quiz, setQuiz] = useState(null); // {question, choices, answer, explain, sel, picked}: something to think about while waiting
+  const [level, setLevel] = useState(0); // how loud the kid is while recording, 0..1
+  const [party, setParty] = useState(null); // {big, name, until}: confetti
 
   const session = useRef(null);
   const recording = useRef(null);
   const langRef = useRef(lang);
   langRef.current = lang;
 
+  // The kid's turn: the mic pulses, so they know Kidex waits for them.
+  const myTurn = screen === 'chat' && !busy && ear === 'idle' && typing === null && prompt !== null;
+
   // The animation clock only runs while something moves, so menus don't redraw for nothing.
-  const animating = busy || ear !== 'idle' || typing !== null;
+  const animating = busy || ear !== 'idle' || typing !== null || myTurn || party !== null;
+  const speed = party ? 90 : 300;
   useEffect(() => {
     if (!animating) return;
-    const t = setInterval(() => setTick(n => n + 1), 300);
+    const t = setInterval(() => setTick(n => n + 1), speed);
     return () => clearInterval(t);
-  }, [animating]);
+  }, [animating, speed]);
+  useEffect(() => {
+    if (!party) return;
+    const t = setTimeout(() => setParty(null), party.until - Date.now());
+    return () => clearTimeout(t);
+  }, [party]);
+
+  function celebrate(big, name) {
+    setParty({ big, name, until: Date.now() + (big ? 4000 : 1500) });
+    if (!quiet) chime(big ? 'Hero' : 'Glass');
+  }
 
   // Load the voice for the current language now, so the first sentence isn't slow.
   useEffect(() => { if (!quiet) warmUp(lang, config.voices); }, [lang]);
 
-  const say = (who, text) => setLines(l => [...l.slice(-30), { who, text }]);
+  const say = (who, text, more) => setLines(l => [...l.slice(-30), { who, text, ...more }]);
   const voice = text => { if (!quiet) speak(text, { lang: langRef.current, voices: config.voices }); };
 
   function onEvent(e) {
     switch (e.type) {
       case 'speak':
-        say('kidex', e.text); voice(e.text); break;
+        say('kidex', e.text, { kind: e.kind }); voice(e.text);
+        if (e.step) setStepAt(e.step - 1);
+        if (e.kind === 'fixed') celebrate(false);
+        break;
       case 'ask':
         say('kidex', e.question); voice(e.question);
         setPrompt({ kind: 'ask', choices: e.choices }); setSel(0); setBusy(false); break;
       case 'plan':
         say('kidex', e.summary); voice(`${e.summary} ${w('right')}`);
+        setSteps(e.steps); setStepAt(-1);
         setPrompt({ kind: 'plan', choices: [`👍 ${w('yes')}`, `👎 ${w('no')}`] }); setSel(0); setBusy(false); break;
+      case 'approved':
+        setStepAt(0); celebrate(false); break;
+      case 'quiz':
+        setQuiz({ ...e, sel: 0, picked: null }); voice(e.question); break;
       case 'activity':
         setActivity(e); break;
       case 'file':
@@ -146,9 +198,13 @@ export function App({ cwd, config, quiet = false }) {
         break; // the guard's notes are for grown-ups, not the kids
       case 'done':
         say('kidex', e.summary); voice(e.summary);
-        setPrompt({ kind: 'done', pictures: e.pictures }); setBusy(false); break;
+        setStepAt(Infinity); setQuiz(null); celebrate(true, e.name);
+        setPrompt({ kind: 'done', pictures: e.pictures, choices: [`🔍 ${w('how')}`, `🔧 ${w('change')}`, `🏠 ${w('finished')}`] }); setSel(0);
+        setBusy(false); break;
       case 'error':
-        say('error', e.message); setBusy(false); setPrompt(p => p ?? { kind: 'free' }); break;
+        // Grown-up words (the real error) stay small; the kid hears that it's OK to try again.
+        say('error', w('oops'), { detail: e.message }); voice(w('oops'));
+        setBusy(false); setPrompt(p => p ?? { kind: 'free' }); break;
       case 'turn':
         setCost(e.cost ?? 0); setBusy(false); setPrompt(p => p ?? { kind: 'free' }); break;
     }
@@ -168,13 +224,14 @@ export function App({ cwd, config, quiet = false }) {
       setScreen('home'); setSel(config.actions.indexOf(a)); setOnPanel(true);
       return;
     }
-    setAction(a); setPick(p); setLines([]); setDrawn([]); setFiles({}); setNow(null); setScreen('chat');
+    setAction(a); setPick(p); setLines([]); setDrawn([]); setFiles({}); setNow(null); setSteps([]); setStepAt(-1); setQuiz(null); setScreen('chat');
     setPrompt({ kind: 'first' });
     session.current = createSession({ cwd, config: { ...config, language }, onEvent });
     say('kidex', w('tell')); voice(w('tell'));
   }
 
-  function submit(words) {
+  /** words: what the kid said or picked; send: what Claude gets, when that should say more. */
+  function submit(words, send = words) {
     words = words.trim();
     if (!words) return;
     hush();
@@ -185,14 +242,28 @@ export function App({ cwd, config, quiet = false }) {
     setPrompt(null); setBusy(true); setActivity(null);
     if (was?.kind === 'first') session.current.start({ action, pick, words, lang: l });
     else if (was?.kind === 'plan' && (words === was.choices[0] || words === was.choices[1])) session.current.answer(words.slice(0, 2));
-    else session.current.answer(words);
+    else session.current.answer(send);
+  }
+
+  function pickDone(i) {
+    if (i === 0) submit(prompt.choices[0], label(WORDS.explainIt, langRef.current));
+    else if (i === 1) { setPrompt({ kind: 'free' }); say('kidex', w('whatChange')); voice(w('whatChange')); }
+    else home();
+  }
+
+  function answerQuiz(i) {
+    if (!quiz || quiz.picked !== null || !quiz.choices[i]) return;
+    setQuiz(q => ({ ...q, picked: i }));
+    const right = i === quiz.answer;
+    voice(`${w(right ? 'correct' : 'notQuite')} ${quiz.explain}`);
+    if (right) celebrate(false);
   }
 
   async function toggleMic() {
     if (!canTalk) { say('error', w('noMic')); return; }
     if (ear === 'idle') {
       hush();
-      try { recording.current = startRecording(); setEar('recording'); } catch (e) { say('error', e.message); }
+      try { setLevel(0); recording.current = startRecording({ onLevel: setLevel }); setEar('recording'); } catch (e) { say('error', e.message); }
       return;
     }
     if (ear !== 'recording') return;
@@ -264,7 +335,17 @@ export function App({ cwd, config, quiet = false }) {
     }
     if (screen === 'pick' && chosen != null && picks[chosen]) { begin(action, picks[chosen]); return; }
 
+    if (screen === 'chat' && busy && quiz && quiz.picked === null && ear === 'idle') {
+      const m = quiz.choices.length;
+      if (key.rightArrow || key.downArrow) { setQuiz(q => ({ ...q, sel: (q.sel + 1) % m })); return; }
+      if (key.leftArrow || key.upArrow) { setQuiz(q => ({ ...q, sel: (q.sel - 1 + m) % m })); return; }
+      const d = Number(input);
+      if (key.return) { answerQuiz(quiz.sel); return; }
+      if (d >= 1 && d <= m) { answerQuiz(d - 1); return; }
+    }
+
     if (screen === 'chat') {
+      if (prompt?.kind === 'done' && chosen != null && !busy && ear === 'idle') { pickDone(chosen); return; }
       if (input === ' ' && !busy || input === ' ' && ear !== 'idle') { toggleMic(); return; }
       if ((input === 't' || input === 'T') && !busy && ear === 'idle') { setTyping(''); return; }
       if (chosen != null && choices[chosen] && !busy && ear === 'idle') { submit(choices[chosen]); return; }
@@ -291,15 +372,21 @@ export function App({ cwd, config, quiet = false }) {
       <${Tiles} items=${picks.map(p => ({ emoji: '🧩', text: nice(p) }))} sel=${sel} columns=${mainWidth} small /><//>`;
   } else {
     const shown = prompt?.kind === 'done' ? prompt.pictures : drawn;
+    const checklist = steps.length > 0 && stepAt >= 0;
     middle = html`<${Box} flexDirection="column" alignItems="center">
       ${lastKid && html`<${Text} color="cyan">🧒 ${lastKid.text}<//>`}
-      ${lastKidex && html`<${Bubble} error=${lastKidex.who === 'error'} width=${Math.min(72, mainWidth - 8)}>${lastKidex.text}<//>`}
+      ${lastKidex && html`<${Bubble} kind=${lastKidex.who === 'error' ? 'error' : lastKidex.kind} detail=${lastKidex.detail} tight=${busy} width=${Math.min(72, mainWidth - 8)}>${lastKidex.text}<//>`}
+      ${prompt?.kind === 'plan' && steps.length > 0 && html`<${Checklist} steps=${steps} at=${-1} title=${w('plan')} />`}
       <${Pictures} files=${shown} />
       ${busy && html`<${Working} tick=${tick} activity=${activity} label=${w('working')} />`}
+      ${checklist && (busy || prompt?.kind === 'done') && html`<${Checklist} steps=${steps} at=${stepAt} tick=${tick} short=${busy && quiz !== null} />`}
+      ${busy && quiz && html`<${Quiz} quiz=${quiz} title=${w('whileYouWait')} words=${w} width=${Math.min(72, mainWidth - 8)} />`}
+      ${myTurn && html`<${Mic} tick=${tick} />`}
       ${!busy && ear === 'idle' && typing === null && choices.length > 0 && html`<${Tiles} items=${choices.map(splitEmoji)} sel=${sel} columns=${mainWidth} />`}
       ${ear === 'recording' && html`
         <${Box} borderStyle="bold" borderColor="red" paddingX=${4} paddingY=${1} marginTop=${1} flexDirection="column" alignItems="center">
           <${Text} color="red" bold>${tick % 2 ? '🔴' : '⭕'}  ${w('listening')}<//>
+          <${Meter} level=${level} />
           <${Text} color="gray">${w('stopTalk')}<//>
         <//>`}
       ${ear === 'hearing' && html`<${Box} marginTop=${1}><${Text} color="yellow" bold>👂 ${w('hearing')}<//><//>`}
@@ -308,6 +395,18 @@ export function App({ cwd, config, quiet = false }) {
           <${Text}>${typing}${tick % 2 ? '▌' : ' '}<//>
         <//>`}<//>`;
   }
+
+  const guide = typing !== null ? w('guideTyping')
+    : screen !== 'chat' ? (toPanel ? null : w('guideHome'))
+    : ear === 'recording' ? w('guideTalking')
+    : ear === 'hearing' ? w('guideHearing')
+    : busy ? (quiz && quiz.picked === null ? w('guideQuiz') : w('guideWorking'))
+    : prompt?.kind === 'plan' ? w('guidePlan')
+    : prompt?.kind === 'done' ? w('guideDone')
+    : prompt && choices.length > 0 ? w('guideChoose')
+    : prompt ? w('guideTurn')
+    : null;
+  const guideColor = ear === 'recording' ? 'red' : busy || ear === 'hearing' ? 'yellow' : 'greenBright';
 
   const hints = typing !== null
     ? [['⏎', w('send')], ['ESC', w('back')]]
@@ -330,9 +429,11 @@ export function App({ cwd, config, quiet = false }) {
         ${split && html`<${TerminalView} panel=${panel} focused=${toPanel} width=${columns - COLUMN} height=${rows - 2} note=${panel.code !== null && w('stopped')} />`}
         ${showPanel && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
       <//>
+      ${guide && html`<${Box} justifyContent="center"><${Text} bold color=${guideColor}>${guide}<//><//>`}
       <${Box} justifyContent="center" gap=${3}>
         ${hints.filter(Boolean).map(([k, v]) => html`<${Text} key=${k} color="gray"><${Text} inverse bold> ${k} <//> ${v}<//>`)}
       <//>
+      ${party && html`<${Confetti} big=${party.big} name=${party.name} title=${w('madeIt')} tick=${tick} columns=${columns} rows=${rows} />`}
     <//>`;
 }
 
@@ -398,11 +499,120 @@ function Column({ items, sel }) {
     <//>`;
 }
 
-function Bubble({ children, error, width }) {
+// What Kidex says looks different when it's a bug (a puzzle to solve) or a fix (a win).
+const MOODS = {
+  error: { icon: '😕', color: 'yellow' },
+  bug: { icon: '🐛', color: 'magentaBright' },
+  fixed: { icon: '🔧', color: 'greenBright' },
+};
+
+function Bubble({ children, kind, detail, width, tight }) {
+  const { icon, color } = MOODS[kind] ?? { icon: '🤖', color: 'whiteBright' };
   return html`
-    <${Box} borderStyle="round" borderColor=${error ? 'red' : 'whiteBright'} paddingX=${2} paddingY=${1} marginY=${1} width=${width} justifyContent="center">
-      <${Text} bold color=${error ? 'red' : 'whiteBright'}>${error ? '😕 ' : '🤖 '}${children}<//>
+    <${Box} borderStyle=${kind === 'bug' || kind === 'fixed' ? 'double' : 'round'} borderColor=${color} paddingX=${2} paddingY=${tight ? 0 : 1} marginY=${tight ? 0 : 1} width=${width} flexDirection="column" alignItems="center">
+      <${Text} bold color=${color}>${icon} ${children}<//>
+      ${detail && html`<${Text} color="gray" dimColor wrap="truncate-end">${detail}<//>`}
     <//>`;
+}
+
+/** The plan's steps: ✅ done, 👉 now, ⬜ still to do. at -1: just the list, before it starts. */
+function Checklist({ steps, at, tick = 0, title, short }) {
+  if (short) {
+    // One line, when the screen is busy with a quiz: the ticks, and the step being worked on.
+    const marks = steps.map((s, i) => i < at ? '✅' : i === at ? '👉' : '⬜').join('');
+    const now = steps[Math.min(at, steps.length - 1)];
+    return html`<${Box} marginTop=${1}><${Text} color="yellowBright">${marks}  ${now.emoji} ${now.text}<//><//>`;
+  }
+  return html`
+    <${Box} flexDirection="column" marginTop=${1} borderStyle="round" borderColor="gray" paddingX=${2}>
+      ${title && html`<${Text} bold color="gray">📋 ${title}<//>`}
+      ${steps.map((s, i) => {
+        const done = at >= 0 && i < at;
+        const now = i === at;
+        const mark = at < 0 ? `${i + 1}.` : done ? '✅' : now ? (tick % 2 ? '👉' : ' 👉') : '⬜';
+        return html`<${Text} key=${i} bold=${now} color=${done ? 'green' : now ? 'yellowBright' : at < 0 ? 'white' : 'gray'}>${mark} ${s.emoji} ${s.text}<//>`;
+      })}
+    <//>`;
+}
+
+/** A small question while Kidex works. After an answer: right or not, and why. */
+function Quiz({ quiz, title, words, width }) {
+  const answered = quiz.picked !== null;
+  const right = quiz.picked === quiz.answer;
+  return html`
+    <${Box} flexDirection="column" alignItems="center" marginTop=${1} borderStyle="round" borderColor="cyan" paddingX=${2} width=${width}>
+      <${Text} color="cyan">🤔 ${title}<//>
+      <${Text} bold color="cyanBright" wrap="wrap">${quiz.question}<//>
+      <${Box} flexDirection="column" marginTop=${1}>
+        ${quiz.choices.map((c, i) => {
+          const on = !answered && i === quiz.sel;
+          const mark = answered ? (i === quiz.answer ? '✅' : i === quiz.picked ? '❌' : '  ') : on ? '▶ ' : '  ';
+          const color = answered ? (i === quiz.answer ? 'green' : i === quiz.picked ? 'red' : 'gray') : on ? 'black' : 'cyan';
+          return html`<${Text} key=${i} bold=${on || (answered && i === quiz.answer)} color=${color} backgroundColor=${on ? 'cyan' : undefined}>${mark} ${i + 1}. ${c} <//>`;
+        })}
+      <//>
+      ${answered && html`<${Box} marginTop=${1}><${Text} color=${right ? 'greenBright' : 'yellow'} wrap="wrap">${right ? '🎉' : '💡'} ${words(right ? 'correct' : 'notQuite')} ${quiz.explain}<//><//>`}
+    <//>`;
+}
+
+/** A big mic that gently pulses while Kidex waits for the kid to talk. */
+function Mic({ tick }) {
+  const on = tick % 4 < 2;
+  return html`
+    <${Box} marginTop=${1} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'greenBright' : 'green'} paddingX=${2}>
+      <${Text} bold color=${on ? 'greenBright' : 'green'}>🎤 ${on ? '·))' : '·) '}<//>
+    <//>`;
+}
+
+/** How loud the kid is: a bar that moves when they talk, so they can see the mic hears them. */
+function Meter({ level }) {
+  const width = 24;
+  const n = Math.round(level * width);
+  const color = level > 0.85 ? 'red' : level > 0.15 ? 'greenBright' : 'gray';
+  return html`<${Text}><${Text} color=${color}>${'█'.repeat(n)}<//><${Text} color="gray">${'░'.repeat(width - n)}<//><//>`;
+}
+
+/**
+ * Confetti falling over the whole screen. big: a "You made it!" banner too.
+ * Each piece is placed on its own, so the screen under it stays visible.
+ */
+const PIECES = ['●', '■', '▲', '◆', '★', '✦', '✿', '♥'];
+const PARTY_COLORS = ['redBright', 'yellowBright', 'greenBright', 'cyanBright', 'magentaBright', 'blueBright'];
+function Confetti({ big, name, title, tick, columns, rows }) {
+  const count = Math.round((columns * rows) / (big ? 45 : 140));
+  const pieces = [];
+  for (let i = 0; i < count; i++) {
+    const r = seeded(i);
+    const x = Math.floor(r() * columns + Math.sin((tick + i) / 3) * 2);
+    const y = Math.floor(r() * rows * 1.5 + tick * (0.6 + r() * 0.8)) % (rows + 2) - 2;
+    if (x < 0 || x >= columns - 1 || y < 0 || y >= rows) continue;
+    pieces.push(html`<${Box} key=${i} position="absolute" left=${x} top=${y}>
+      <${Text} color=${PARTY_COLORS[i % PARTY_COLORS.length]} bold>${PIECES[Math.floor(r() * PIECES.length)]}<//>
+    <//>`);
+  }
+  const width = Math.min(44, columns - 4);
+  return html`
+    <${Box} position="absolute" left=${0} top=${0} width=${columns} height=${rows}>
+      ${pieces}
+      ${big && html`
+        <${Box} position="absolute" left=${Math.floor((columns - width) / 2)} top=${Math.max(0, Math.floor(rows / 2) - 4)}
+          width=${width} borderStyle="double" borderColor=${PARTY_COLORS[tick % PARTY_COLORS.length]} backgroundColor="black"
+          flexDirection="column" alignItems="center" paddingY=${1}>
+          <${Text} bold color="yellowBright">🎉 ${title} 🎉<//>
+          ${name && html`<${Text} bold color="whiteBright">✨ ${name} ✨<//>`}
+        <//>`}
+    <//>`;
+}
+
+/** The same random numbers for the same piece every frame, so pieces fall instead of jumping. */
+function seeded(seed) {
+  let a = seed * 2654435761 + 1;
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function Working({ tick, activity, label }) {

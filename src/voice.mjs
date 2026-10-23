@@ -24,12 +24,24 @@ export function abilities() {
   };
 }
 
-/** Start recording. Call stop() on the result to get the wav file. */
-export function startRecording() {
+/**
+ * Start recording. Call stop() on the result to get the wav file.
+ * onLevel(0..1) gets how loud the kid is, a few times a second, for the sound meter.
+ */
+export function startRecording({ onLevel } = {}) {
   const file = path.join(os.tmpdir(), `kidex-${process.pid}-${Date.now()}.wav`);
   const mic = process.env.KIDEX_MIC ?? ':default';
+  // A second, raw copy of the sound goes to stdout, so we can measure it while it records.
   const ff = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y',
-    '-f', 'avfoundation', '-i', mic, '-ac', '1', '-ar', '16000', file], { stdio: ['pipe', 'ignore', 'pipe'] });
+    '-f', 'avfoundation', '-i', mic, '-ac', '1', '-ar', '16000', file,
+    '-ac', '1', '-ar', '8000', '-f', 's16le', 'pipe:1'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let last = 0;
+  ff.stdout.on('data', chunk => {
+    const now = Date.now();
+    if (!onLevel || now - last < 120) return;
+    last = now;
+    onLevel(loudness(chunk));
+  });
   let err = '';
   ff.stderr.on('data', d => { err += d; });
   const done = new Promise(resolve => ff.on('close', resolve));
@@ -48,6 +60,16 @@ export function startRecording() {
     },
     cancel() { ff.kill('SIGKILL'); fs.rmSync(file, { force: true }); },
   };
+}
+
+/** 16-bit sound samples → 0 (quiet) to 1 (loud), on a scale that suits talking. */
+export function loudness(buf) {
+  const n = Math.floor(buf.length / 2);
+  if (!n) return 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) { const v = buf.readInt16LE(i * 2) / 32768; sum += v * v; }
+  const db = 20 * Math.log10(Math.sqrt(sum / n) || 1e-9); // about -60 (silence) to 0 (very loud)
+  return Math.max(0, Math.min(1, (db + 55) / 45));
 }
 
 /** wav → text. lang: "da", "en" or "auto". */
@@ -198,6 +220,12 @@ function play(cmd, args, after) {
   const p = spawn(cmd, args, { stdio: 'ignore' });
   speaking = p;
   return new Promise(resolve => p.on('close', () => { if (speaking === p) speaking = null; after?.(); resolve(); }));
+}
+
+/** A short macOS sound for happy moments: "Hero" when something is made, "Glass" for smaller wins. */
+export function chime(name = 'Glass') {
+  const file = `/System/Library/Sounds/${name}.aiff`;
+  if (fs.existsSync(file)) spawn('afplay', [file], { stdio: 'ignore' }).unref();
 }
 
 export function hush() {
