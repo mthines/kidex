@@ -90,29 +90,118 @@ export function voiceList() {
  * ("Sara (Premium)") are taken over the plain one.
  */
 export function bestVoice(lang, preferred, list = voiceList()) {
-  const mine = list.filter(v => v.locale.startsWith(lang + '_'));
+  preferred ||= PLAIN[lang];
+  const mine = list.filter(v => v.locale.startsWith(lang + '_') && !NOVELTY.has(v.name));
   const rank = v => (/\(Premium\)/.test(v.name) ? 0 : /\(Enhanced\)/.test(v.name) ? 1 : 2) + (preferred && v.name.startsWith(preferred) ? 0 : 0.5);
   return [...mine].sort((a, b) => rank(a) - rank(b))[0]?.name ?? null;
 }
 
+// When nothing better is installed: the ordinary voice each language comes with.
+const PLAIN = { da: 'Sara', en: 'Samantha' };
+// Apple's joke and old robot voices: never picked by themselves.
+const NOVELTY = new Set(['Albert', 'Bad News', 'Bahh', 'Bells', 'Boing', 'Bubbles', 'Cellos', 'Good News', 'Jester',
+  'Organ', 'Superstar', 'Trinoids', 'Whisper', 'Wobble', 'Zarvox', 'Fred', 'Junior', 'Kathy', 'Ralph']);
+
+// Piper: open-source voices that run on this computer. Optional; `kidex setup voice`
+// installs Python + Piper in ~/.kidex/piper and voices in ~/.kidex/voices.
+export const PIPER_PYTHON = path.join(HOME, 'piper', 'bin', 'python');
+export const VOICES = path.join(HOME, 'voices');
+const PIPER_SCRIPT = new URL('./piper_speak.py', import.meta.url).pathname;
+export const PIPER_VOICES = { da: 'da_DK-talesyntese-medium', en: 'en_US-lessac-medium' };
+
+/**
+ * The Piper voice file to use for a language, or null for macOS `say`.
+ * kidex.json can name one ("voices": {"da": "piper:da_DK-talesyntese-medium"})
+ * or turn Piper off for a language ("say:Sara", or any plain voice name).
+ */
+export function piperModel(lang, preferred) {
+  if (!fs.existsSync(PIPER_PYTHON) || !has('espeak-ng')) return null;
+  if (preferred && !preferred.startsWith('piper:')) return null; // kidex.json asked for a macOS voice
+  const wanted = preferred?.startsWith('piper:') ? preferred.slice(6) : null;
+  let files = [];
+  try { files = fs.readdirSync(VOICES).filter(f => f.endsWith('.onnx')); } catch { return null; }
+  const file = wanted ? files.find(f => f === wanted + '.onnx') : files.find(f => f.startsWith(lang + '_'));
+  return file ? path.join(VOICES, file) : null;
+}
+
+const pipers = new Map(); // model file → running helper
+
+function piper(model) {
+  let p = pipers.get(model);
+  if (p && !p.dead) return p;
+  const proc = spawn(PIPER_PYTHON, [PIPER_SCRIPT, model], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const waiting = []; // answers come back in order
+  let ready;
+  p = { dead: false, ready: new Promise(r => { ready = r; }) };
+  let buf = '';
+  proc.stdout.on('data', d => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 1);
+      if (line === 'ready') ready();
+      else waiting.shift()?.(line);
+    }
+  });
+  proc.on('exit', () => { p.dead = true; ready(); while (waiting.length) waiting.shift()('error piper stopped'); });
+  proc.on('error', () => { p.dead = true; ready(); });
+  p.say = async (text, out) => {
+    await p.ready;
+    if (p.dead) throw new Error('piper stopped');
+    const answer = await new Promise(resolve => { waiting.push(resolve); proc.stdin.write(JSON.stringify({ text, out }) + '\n'); });
+    if (answer !== 'ok') throw new Error(answer);
+  };
+  pipers.set(model, p);
+  return p;
+}
+
+/** Start a language's Piper voice early, so the first sentence isn't slow. */
+export function warmUp(lang, voices = {}) {
+  const model = piperModel(lang, voices[lang]);
+  if (model) piper(model);
+}
+
 let speaking = null;
+let turn = 0; // a newer line wins, even while an older one is still being made
 
 /** Read text out loud. A new line cuts off the one before. */
-export function speak(line, { lang = 'en', voices = {}, rate } = {}) {
+export async function speak(line, { lang = 'en', voices = {}, rate } = {}) {
   hush();
+  const mine = ++turn;
   const clean = stripForSpeech(line);
-  if (!clean || !has('say')) return Promise.resolve();
+  if (!clean) return;
+
+  const model = piperModel(lang, voices[lang]);
+  if (model) {
+    const out = path.join(os.tmpdir(), `kidex-say-${process.pid}-${mine}.wav`);
+    try {
+      await piper(model).say(clean, out);
+      if (mine !== turn) return fs.rmSync(out, { force: true });
+      return await play('afplay', [out], () => fs.rmSync(out, { force: true }));
+    } catch {
+      fs.rmSync(out, { force: true });
+      if (mine !== turn) return;
+      // fall through to macOS say
+    }
+  }
+
+  if (!has('say')) return;
   const args = [];
-  const voice = bestVoice(lang, voices[lang]);
+  const voice = bestVoice(lang, voices[lang]?.replace(/^say:/, ''));
   if (voice) args.push('-v', voice);
   if (rate) args.push('-r', String(rate));
   args.push(clean);
-  const p = spawn('say', args, { stdio: 'ignore' });
+  return play('say', args);
+}
+
+function play(cmd, args, after) {
+  const p = spawn(cmd, args, { stdio: 'ignore' });
   speaking = p;
-  return new Promise(resolve => p.on('close', () => { if (speaking === p) speaking = null; resolve(); }));
+  return new Promise(resolve => p.on('close', () => { if (speaking === p) speaking = null; after?.(); resolve(); }));
 }
 
 export function hush() {
+  turn++;
   if (speaking) speaking.kill();
   speaking = null;
 }

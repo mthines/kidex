@@ -7,7 +7,7 @@ import { createSession } from './session.mjs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { text as label, pickChoices, fill, loadSettings, saveSettings } from './config.mjs';
-import { abilities, startRecording, transcribe, speak, hush, guessLang } from './voice.mjs';
+import { abilities, startRecording, transcribe, speak, hush, guessLang, warmUp } from './voice.mjs';
 import { render as renderPicture } from './pictures.mjs';
 import { describe, peek } from './files.mjs';
 import { openPanel, resizePanel, pressKey, escapePanel, usePanel, TerminalView } from './panel.mjs';
@@ -110,6 +110,9 @@ export function App({ cwd, config, quiet = false }) {
     const t = setInterval(() => setTick(n => n + 1), 300);
     return () => clearInterval(t);
   }, [animating]);
+
+  // Load the voice for the current language now, so the first sentence isn't slow.
+  useEffect(() => { if (!quiet) warmUp(lang, config.voices); }, [lang]);
 
   const say = (who, text) => setLines(l => [...l.slice(-30), { who, text }]);
   const voice = text => { if (!quiet) speak(text, { lang: langRef.current, voices: config.voices }); };

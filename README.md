@@ -30,7 +30,17 @@ node bin/kidex.mjs doctor    # checks the mic, speech, and voices
 
 Kidex runs Claude through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk), which uses your Claude Code login or `ANTHROPIC_API_KEY`.
 
-Speech never leaves the machine: [whisper.cpp](https://github.com/ggml-org/whisper.cpp) turns talking into text, and macOS `say` talks back. Kidex uses the best voice installed for each language (Premium, then Enhanced, then basic). The better ones are free from Apple but can only be downloaded by hand: System Settings → Accessibility → Read & Speak (Spoken Content on older macOS) → the ⓘ to the right of System voice → pick the language → ⬇ next to a Premium or Enhanced voice. `kidex doctor` says when a better one is available. The first time a kid talks, macOS asks whether the terminal may use the microphone.
+Speech never leaves the machine: [whisper.cpp](https://github.com/ggml-org/whisper.cpp) turns talking into text, and Kidex talks back with a voice that runs on the Mac too.
+
+For a natural voice, install [Piper](https://github.com/OHF-Voice/piper1-gpl), a free, open-source voice engine (Danish by default; add `en` or any [Piper voice](https://huggingface.co/rhasspy/piper-voices) name):
+
+```bash
+node bin/kidex.mjs setup voice da en
+```
+
+It puts Python, Piper, and the voices in `~/.kidex` and installs `espeak-ng` with Homebrew. (Piper's Mac package can't find its own pronunciation data, so Kidex asks `espeak-ng` for the pronunciation and gives that to the voice.) Without Piper, Kidex uses macOS `say` with the best voice installed: Premium, then Enhanced, then the ordinary one. Apple's better voices are downloaded in System Settings → Accessibility → Read & Speak → the ⓘ to the right of System voice; Danish has none. `kidex doctor` shows which voice each language gets.
+
+The first time a kid talks, macOS asks whether the terminal may use the microphone.
 
 ## Use
 
@@ -66,7 +76,7 @@ Put a `kidex.json` in the project's folder:
   "budgetUsd": 3,                    // per session
   "model": "claude-opus-5-5",
   "effort": "medium",
-  "voices": { "da": "Sara", "en": "Samantha" },
+  "voices": { "da": "piper:da_DK-talesyntese-medium", "en": "Samantha" },  // optional: a Piper voice or a macOS voice per language
   "git": { "branch": "kidex/{date}", "commit": true },  // optional: work on a branch, commit at the end
   "explain": { "kit.json": { "en": "What you get to try the mod", "da": "Det du får, når du prøver modet" } },
   "actions": [

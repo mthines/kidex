@@ -50,4 +50,5 @@ test('the best installed voice wins: Premium, then Enhanced, then the one kidex.
   assert.equal(bestVoice('da', 'Sara', [...list, { name: 'Sara (Premium)', locale: 'da_DK' }]), 'Sara (Premium)');
   assert.equal(bestVoice('en', 'Daniel', list), 'Daniel');
   assert.equal(bestVoice('sv', 'Alva', list), null);
+  assert.equal(bestVoice('en', undefined, [{ name: 'Albert', locale: 'en_US' }, ...list]), 'Samantha');
 });

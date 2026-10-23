@@ -14,7 +14,7 @@ const DEFAULT_ACTIONS = [
 export const DEFAULTS = {
   name: null,
   language: 'auto', // "da", "en" or "auto" (follow whatever the kid speaks)
-  voices: { da: 'Sara', en: 'Samantha' },
+  voices: {}, // per language: "piper:<voice>" or a macOS voice name; empty picks the best installed
   model: 'claude-opus-5-5',
   effort: 'medium',
   budgetUsd: 3,
