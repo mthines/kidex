@@ -17,8 +17,18 @@ import { systemPrompt, firstMessage } from './prompt.mjs';
 import { changedPictures, writePixels } from './pictures.mjs';
 import { changedFiles } from './files.mjs';
 
-const YES = /^\s*(yes|yeah|yep|yup|ok|okay|sure|do it|go|ja|jo|jep|jeps|jaaa*|okay|gør det|kør|fedt|super)\b[\s!.]*$/i;
-export const isYes = s => YES.test(s);
+// A spoken yes to the plan: at least one yes word, and nothing but agreeing words around it,
+// so "Ja, det lyder helt perfekt. Tak." unlocks the files and "ja, men gør den blå" does not.
+const YES_WORDS = /^(yes|yeah|yep|yup|ok|okay|sure|go|good|great|perfect|awesome|ja|jo|jep|jeps|jamen|jaa+|kør|gør|godt|fint|fedt|super|perfekt)$/;
+const AGREEING = new Set(`
+  please thanks thank you that that's thats it it's is sounds sound nice cool fine right correct exactly
+  absolutely totally really very so just do let's lets ahead all
+  tak det lyder helt meget rigtig rigtigt præcis bare sejt mega vildt så er lav du skal gå i gang
+`.split(/\s+/).filter(Boolean));
+export function isYes(s) {
+  const words = s.toLowerCase().match(/[\p{L}']+/gu) ?? [];
+  return words.some(w => YES_WORDS.test(w)) && words.every(w => YES_WORDS.test(w) || AGREEING.has(w));
+}
 
 export function createSession({ cwd, config, onEvent }) {
   const startedAt = Date.now();

@@ -39,6 +39,9 @@ test('speech bits', () => {
   assert.equal(stripForSpeech('🎉 **Done!**'), 'Done!');
   assert.ok(isYes('Ja!') && isYes('yes') && isYes('gør det'));
   assert.ok(!isYes('yes but make it blue') && !isYes('nej'));
+  // Spoken answers come as whole sentences.
+  for (const yes of ['Ja, det lyder helt perfekt. Tak.', 'Yes, sounds great, thank you!', 'Okay, gå i gang!', 'Ja tak', 'Det lyder godt']) assert.ok(isYes(yes), yes);
+  for (const no of ['Ja, men gør den blå', 'Det lyder ikke godt', 'Nej tak', 'Ja, lav den rød', 'Yes, and make it fly', 'go away', '']) assert.ok(!isYes(no), no);
 });
 
 test('the best installed voice wins: Premium, then Enhanced, then the one kidex.json names', () => {
