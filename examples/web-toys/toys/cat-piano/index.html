@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cat Piano</title>
+<style>
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(#bfe9ff, #ffe3f3);
+    font-family: "Comic Sans MS", "Chalkboard SE", sans-serif;
+    user-select: none;
+  }
+  h1 { font-size: 3.5rem; margin: 0 0 0.2em; color: #7a3cff; text-shadow: 3px 3px 0 #fff; }
+  p { font-size: 1.5rem; margin: 0 0 1em; color: #444; }
+  .piano {
+    display: flex;
+    align-items: flex-end;
+    gap: 14px;
+    padding: 30px 24px 0;
+    background: #3b2a50;
+    border-radius: 30px 30px 0 0;
+    border-bottom: 24px solid #2a1d3a;
+  }
+  .key {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 0;
+  }
+  .cat { transition: transform 0.12s; }
+  .key:hover .cat { transform: scale(1.05); }
+  .key.jump .cat { animation: jump 0.5s ease-out; }
+  @keyframes jump {
+    0%   { transform: translateY(0) scaleY(0.85); }
+    35%  { transform: translateY(-90px) scaleY(1.1); }
+    70%  { transform: translateY(0) scaleY(0.9); }
+    100% { transform: translateY(0) scaleY(1); }
+  }
+  .plank {
+    width: 120px;
+    height: 70px;
+    margin-top: 6px;
+    border-radius: 0 0 14px 14px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: bold;
+    color: #3b2a50;
+  }
+  .key.jump .plank { background: #ffe066; }
+  .meow {
+    position: fixed;
+    font-size: 2.5rem;
+    font-weight: bold;
+    pointer-events: none;
+    animation: float 1s ease-out forwards;
+  }
+  @keyframes float {
+    from { opacity: 1; transform: translateY(0); }
+    to   { opacity: 0; transform: translateY(-120px); }
+  }
+</style>
+</head>
+<body>
+<h1>🐱 Cat Piano 🎹</h1>
+<p>Click a cat (or press 1 2 3 4 5) to hear it meow!</p>
+<div class="piano" id="piano"></div>
+
+<script>
+  // Biggest cat sings lowest, tiniest cat sings highest.
+  const cats = [
+    { name: 'Big Boss', color: '#ff9f43', size: 1.0,  note: 262 },
+    { name: 'Fluffy',   color: '#a0a0b0', size: 0.9,  note: 294 },
+    { name: 'Mimi',     color: '#ffffff', size: 0.8,  note: 330 },
+    { name: 'Socks',    color: '#3d3d3d', size: 0.7,  note: 392 },
+    { name: 'Tiny',     color: '#ff8fc7', size: 0.6,  note: 440 },
+  ];
+
+  function catPicture(color, size) {
+    const w = 120 * size, h = 130 * size;
+    const eye = color === '#3d3d3d' ? '#ffe066' : '#222';
+    return `<svg class="cat" width="${w}" height="${h}" viewBox="0 0 120 130">
+      <path d="M95 110 Q125 90 110 60" stroke="${color}" stroke-width="10" fill="none" stroke-linecap="round"/>
+      <ellipse cx="60" cy="100" rx="40" ry="28" fill="${color}" stroke="#222" stroke-width="3"/>
+      <polygon points="22,40 30,5 50,28" fill="${color}" stroke="#222" stroke-width="3"/>
+      <polygon points="98,40 90,5 70,28" fill="${color}" stroke="#222" stroke-width="3"/>
+      <circle cx="60" cy="50" r="35" fill="${color}" stroke="#222" stroke-width="3"/>
+      <circle cx="47" cy="45" r="6" fill="${eye}"/>
+      <circle cx="73" cy="45" r="6" fill="${eye}"/>
+      <circle cx="49" cy="43" r="2" fill="#fff"/>
+      <circle cx="75" cy="43" r="2" fill="#fff"/>
+      <polygon points="56,57 64,57 60,62" fill="#ff6b9a"/>
+      <path d="M60 62 Q55 68 50 64 M60 62 Q65 68 70 64" stroke="#222" stroke-width="2" fill="none"/>
+      <path d="M40 58 L18 54 M40 62 L18 64 M80 58 L102 54 M80 62 L102 64" stroke="#222" stroke-width="2"/>
+    </svg>`;
+  }
+
+  let audio;
+  function meow(freq) {
+    audio = audio || new AudioContext();
+    const t = audio.currentTime;
+    const osc = audio.createOscillator();
+    const filter = audio.createBiquadFilter();
+    const gain = audio.createGain();
+    osc.type = 'sawtooth';
+    // "Mee-ow": the pitch slides up, then down.
+    osc.frequency.setValueAtTime(freq * 0.9, t);
+    osc.frequency.linearRampToValueAtTime(freq * 1.15, t + 0.15);
+    osc.frequency.linearRampToValueAtTime(freq * 0.85, t + 0.55);
+    // The mouth opens then closes.
+    filter.type = 'lowpass';
+    filter.Q.value = 8;
+    filter.frequency.setValueAtTime(freq * 2, t);
+    filter.frequency.linearRampToValueAtTime(freq * 6, t + 0.15);
+    filter.frequency.linearRampToValueAtTime(freq * 1.5, t + 0.55);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.4, t + 0.05);
+    gain.gain.linearRampToValueAtTime(0.3, t + 0.35);
+    gain.gain.linearRampToValueAtTime(0, t + 0.6);
+    osc.connect(filter).connect(gain).connect(audio.destination);
+    osc.start(t);
+    osc.stop(t + 0.65);
+  }
+
+  function showMeow(key) {
+    const box = key.getBoundingClientRect();
+    const word = document.createElement('div');
+    word.className = 'meow';
+    word.textContent = 'Meow! 🎵';
+    word.style.left = (box.left + box.width / 2 - 70) + 'px';
+    word.style.top = (box.top - 40) + 'px';
+    word.style.color = ['#ff4757', '#2ed573', '#1e90ff', '#ffa502', '#a55eea'][Math.floor(Math.random() * 5)];
+    document.body.appendChild(word);
+    setTimeout(() => word.remove(), 1000);
+  }
+
+  function play(key, cat) {
+    meow(cat.note);
+    key.classList.remove('jump');
+    void key.offsetWidth; // restart the jump
+    key.classList.add('jump');
+    showMeow(key);
+  }
+
+  const piano = document.getElementById('piano');
+  const keys = cats.map((cat, i) => {
+    const key = document.createElement('button');
+    key.className = 'key';
+    key.title = cat.name;
+    key.innerHTML = catPicture(cat.color, cat.size) + `<div class="plank">${i + 1}</div>`;
+    key.addEventListener('pointerdown', () => play(key, cat));
+    piano.appendChild(key);
+    return key;
+  });
+
+  document.addEventListener('keydown', (e) => {
+    const i = Number(e.key) - 1;
+    if (i >= 0 && i < cats.length) play(keys[i], cats[i]);
+  });
+</script>
+</body>
+</html>

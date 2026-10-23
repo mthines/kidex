@@ -1,23 +1,69 @@
+<p align="center">
+  <img src="docs/images/banner.svg" alt="Kidex: kids talk, Claude builds, everyone plays" width="100%">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/runs%20on-macOS-111?logo=apple" alt="Runs on macOS">
+  <img src="https://img.shields.io/badge/built%20with-Claude-d97757" alt="Built with Claude">
+  <img src="https://img.shields.io/badge/speaks-Dansk%20%C2%B7%20English-6f9be0" alt="Speaks Danish and English">
+  <img src="https://img.shields.io/badge/voice-stays%20on%20your%20Mac-8fc493" alt="Voice stays on your Mac">
+</p>
+
 # 🧱 Kidex
 
 **Your kid has the ideas. With Kidex, they turn them into real code just by talking.**
 
 A magic wand that turns creepers into friends. A button that meows. A rifle that shoots faster. Kids know exactly what they want to make; what stops them is typing, syntax, and a blank editor. With Kidex they press space and say it. Kidex asks a question or two with big buttons, reads its plan out loud, and waits for their 👍. Then it builds the thing, tests it, and celebrates with them when it works.
 
-```
- 🧱 Kidex · Web toys
-
- 🧒 en robot der danser
- 🤖 Sejt, en dansende robot! Hvilken musik skal den danse til?
-
- ╔══════════════════╗ ╭─────────────────╮ ╭───────────────╮ ╭───────────────────╮
- ║  1  🎵 Glad pop  ║ │  2  🥁 Trommer  │ │  3  🎹 Disco  │ │  4  🤖 Robot-bip  │
- ╚══════════════════╝ ╰─────────────────╯ ╰───────────────╯ ╰───────────────────╯
-
-  SPACE  🎤 snak   T  ⌨️  skriv   ESC  🏠 tilbage
-```
+<p align="center">
+  <img src="docs/images/tour.svg" alt="A Kidex session: pick what to make, say it, hear the plan, watch it get built, and celebrate" width="100%">
+</p>
 
 Under the hood it's Claude, the same coding agent grown-ups use, with a kid-sized screen in front of it and a guard that keeps the work safe.
+
+## One sentence in, a toy out
+
+Every picture here is from one real session in [`examples/web-toys`](examples/web-toys). The kid's whole wish was *"a piano made of cats that meow different notes when you click them"*.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/ask.svg" alt="Kidex asks how many cats the piano should have, with big answer buttons"></td>
+    <td width="50%"><img src="docs/images/plan.svg" alt="Kidex reads its plan aloud as a four-step checklist and waits for a thumbs up"></td>
+  </tr>
+  <tr>
+    <td><b>🎤 A question or two.</b> "How many singing cats should be on the piano?" Big buttons, or just say the answer.</td>
+    <td><b>📋 The plan, read out loud.</b> Four steps, in kid words. Nothing happens until the kid says 👍.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/build.svg" alt="While Kidex builds, the files panel shows the new file with a peek at its code, the checklist ticks, and a quiz waits"></td>
+    <td><img src="docs/images/party.svg" alt="Confetti and a You made it! Cat Piano banner"></td>
+  </tr>
+  <tr>
+    <td><b>🔨 Watch it being built.</b> The new file appears on the left with a peek at its code. The checklist ticks along. And a quiz: <i>which cat should sing the lowest meow?</i></td>
+    <td><b>🎉 You made it!</b> Confetti, the toy's name in lights, and three ways to go on: how does it work, change something, or done.</td>
+  </tr>
+</table>
+
+And here's what came out, [ready to open in a browser](examples/web-toys/toys/cat-piano/index.html):
+
+<p align="center">
+  <img src="docs/images/cat-piano.png" alt="Cat Piano: five cats from big to tiny sitting on piano keys numbered 1 to 5" width="80%">
+</p>
+
+## How a session goes
+
+```mermaid
+flowchart LR
+  A["🎤 The kid says<br/>what they want"] --> B["❓ A question<br/>or two"]
+  B --> C["📋 The plan,<br/>read aloud"]
+  C -- "👎 change it" --> B
+  C -- "👍" --> D["🔨 Kidex builds<br/>while the kid watches"]
+  D --> E["🤖 The test robot<br/>checks it"]
+  E -- "🐛 a bug!" --> D
+  E -- "✅" --> F["🎉 You made it!"]
+  F --> G["🎮 Play with it"]
+  F -- "🔧 change something" --> A
+```
 
 ## Why parents like it
 
