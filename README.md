@@ -1,6 +1,8 @@
 # 🧱 Kidex
 
-A voice-first coding buddy for kids. They pick what they want to do, press space, and talk. Kidex (Claude underneath) asks a couple of questions with big buttons, reads its plan out loud and waits for a 👍. Then it builds the thing, tests it, and says what it made.
+**Your kid has the ideas. With Kidex, they turn them into real code just by talking.**
+
+A magic wand that turns creepers into friends. A button that meows. A rifle that shoots faster. Kids know exactly what they want to make; what stops them is typing, syntax, and a blank editor. With Kidex they press space and say it. Kidex asks a question or two with big buttons, reads its plan out loud, and waits for their 👍. Then it builds the thing, tests it, and celebrates with them when it works.
 
 ```
  🧱 Kidex · Web toys
@@ -15,9 +17,35 @@ A voice-first coding buddy for kids. They pick what they want to do, press space
   SPACE  🎤 snak   T  ⌨️  skriv   ESC  🏠 tilbage
 ```
 
-While Claude builds, a panel on the left (in a window at least 100 columns wide) shows the files it makes ✨ and changes 🔨 as a little tree. The file it's working on right now gets one sentence about what that kind of file is for and a peek at a few lines of it: a first look at what code is, without a wall of it.
+Under the hood it's Claude, the same coding agent grown-ups use, with a kid-sized screen in front of it and a guard that keeps the work safe.
 
-Kidex knows nothing about any particular project. A project plugs in with a `kidex.json` (its buttons, its test command, and what Claude may run) and its usual `CLAUDE.md`. Claude follows that file just as it would for a grown-up.
+## Why parents like it
+
+- **No typing needed.** Kids talk; Kidex listens. Kids who can type can press `T` and write instead. It speaks Danish and English, and follows whichever the kid speaks.
+- **The kid is the boss.** Nothing is built until they've heard the plan and said yes. Want it blue instead? They just say so, and the plan changes.
+- **They see what code is, without a wall of it.** While Kidex works, the files it makes ✨ and changes 🔨 grow as a little tree beside the chat. The file it's working on gets one sentence in kid words ("Code the game runs: this is where the magic happens") and a peek at a few lines.
+- **Waiting is part of the fun.** The plan is a checklist that ticks off ✅ 👉 ⬜ as it builds. Now and then Kidex asks a small quiz about what it's doing, and explains the answer.
+- **Bugs are puzzles, not failures.** Their work gets tested, with the project's own test. When the test robot finds a bug 🐛, the kid can guess why before Kidex fixes it 🔧. Errors say it's fine to try again; the scary details stay small, for grown-ups.
+- **A party when it's done.** Confetti, a "You made it!" banner with the thing's name, and a sound. Then: 🔍 how does it work?, 🔧 change something, or 🏠 done.
+- **Real projects, not a toy box.** Kidex works in your actual project: the one you already build with Claude Code. It was made for a family Minecraft server, where kids make their own mods and then play them on the server with everyone else. To start smaller, `examples/web-toys` lets them make little browser toys.
+
+## Safe to hand over
+
+Kidex lets kids drive a coding agent, so it checks every single step Claude takes, whatever the project's own settings allow:
+
+- Nothing changes until the kid says 👍.
+- Claude stays inside the project folder, away from passwords, keys, and anything you list.
+- It only runs the commands you allow. It never commits, pushes, or rewrites git history, and it can't browse the web or download things itself.
+- Each session has a spending limit (`budgetUsd`, $3 by default).
+- The kid's voice stays on the Mac: speech-to-text and the voice both run locally, and Claude only gets the words, as text.
+
+The details are under [Safety](#safety) below.
+
+## What you need
+
+- A Mac, and a Claude Code login (or an `ANTHROPIC_API_KEY`).
+- A project with a `kidex.json` that says which buttons kids see, how their work gets tested, and which commands are OK. Or start with `examples/web-toys`.
+- A few minutes for setup, below. Then sit next to them for the first one: it's more fun together.
 
 ## Setup (macOS)
 
@@ -60,14 +88,6 @@ node bin/kidex.mjs path/to/project
 | `Q` | quit (on the start screen) |
 
 To try it without a project, use `examples/web-toys`: kids make small browser toys there.
-
-What the kid sees along the way:
-
-- **Whose turn it is.** A line at the bottom always says what to do now ("Your turn! Press SPACE and talk", "Kidex is building…"). On the kid's turn a 🎤 pulses; while they talk, a bar shows how loud they are, so they can see the mic hears them.
-- **The plan as a checklist.** Claude's plan comes with 2–5 big steps, which tick off (✅ 👉 ⬜) while it builds.
-- **Something to do while waiting.** Now and then Claude asks a small quiz question about what it is doing; the kid answers with the arrows, and sees why.
-- **Bugs as puzzles.** When a test fails, Kidex says "the test robot found a bug" (🐛), sometimes lets the kid guess why, and says what fixed it (🔧). Errors say it's OK to try again; the real error stays small, for grown-ups.
-- **A party when it's made.** Confetti, a "You made it!" banner with the name of the thing, and a sound. Smaller sparkles when the plan gets a yes, a bug is fixed, or a quiz answer is right. Then: 🔍 how does it work?, 🔧 change something, or 🏠 done.
 
 ## Hook up a project
 
