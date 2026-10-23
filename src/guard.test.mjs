@@ -20,6 +20,22 @@ test('secrets and denied folders are off limits', () => {
   assert.equal(ok('Bash', { command: 'cat server/.env' }), false);
 });
 
+test('a project in a folder named like "x.git" still works, and .git inside it is still off limits', () => {
+  const git = { ...base, cwd: '/home/kid/mods.git/main', planApproved: true, tool: 'Bash' };
+  assert.equal(check({ ...git, input: { command: 'cd /home/kid/mods.git/main && ./mc test cake 2>&1 | tail -30' } }).ok, true);
+  assert.equal(check({ ...git, tool: 'Write', input: { file_path: '/home/kid/mods.git/main/addons/cake/a.js' } }).ok, true);
+  assert.equal(check({ ...git, input: { command: 'cat /home/kid/mods.git/main/.git/config' } }).ok, false);
+  assert.equal(check({ ...git, input: { command: 'cat .git/config' } }).ok, false);
+});
+
+test('commands run from the project folder, so the paths the guard checks are the paths they use', () => {
+  // After "cd server", "cat data/x" would read server/data/x, which the guard would check as data/x.
+  assert.equal(ok('Bash', { command: 'cd server && cat data/x' }), false);
+  assert.equal(ok('Bash', { command: 'cd addons/cake && ls' }), false);
+  assert.equal(ok('Bash', { command: 'cd . && ls' }), true);
+  assert.equal(ok('Bash', { command: 'cd && ls' }), false);
+});
+
 test('no file changes or commands before the kid says yes', () => {
   assert.equal(ok('Write', { file_path: 'a.js' }, false), false);
   assert.equal(ok('Bash', { command: 'npm run new -- cake' }, false), false);
@@ -30,7 +46,7 @@ test('after yes: allowed commands run, others do not', () => {
   assert.equal(ok('Write', { file_path: 'addons/cake/x.json' }), true);
   assert.equal(ok('Bash', { command: 'npm run new -- cake' }), true);
   assert.equal(ok('Bash', { command: './mc test cake 2>&1 | tail -20' }), true);
-  assert.equal(ok('Bash', { command: 'cd addons/cake && ls' }), true);
+  assert.equal(ok('Bash', { command: `cd ${cwd} && ./mc test cake` }), true);
   assert.equal(ok('Bash', { command: 'npm install left-pad' }), false);
   assert.equal(ok('Bash', { command: './mc restart' }), false);
   assert.equal(ok('Bash', { command: 'git push origin main' }), false);

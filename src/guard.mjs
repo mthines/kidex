@@ -52,8 +52,10 @@ function bashOk(command, { cwd, planApproved, allow, deny, denyPaths }) {
   for (const bad of never) {
     if (hasWord(command, bad)) return no(`"${bad}" is not allowed in Kidex.`);
   }
+  // The project's own path doesn't count: a project in "mods.git/main" must not look like ".git/".
+  const outsideProject = command.split(cwd).join('.');
   for (const p of denyPaths) {
-    if (command.includes(p)) return no(`Kidex keeps away from ${p}.`);
+    if (outsideProject.includes(p)) return no(`Kidex keeps away from ${p}.`);
   }
 
   const parsed = parse(command);
@@ -73,7 +75,13 @@ function bashOk(command, { cwd, planApproved, allow, deny, denyPaths }) {
       }
     }
     const part = words.join(' ');
-    if (words[0] === 'cd') continue; // its path was checked above
+    if (words[0] === 'cd') {
+      // Paths are checked from the project folder, so commands must run there too.
+      if (words.length < 2 || path.resolve(cwd, words[1]) !== cwd) { // a bare cd goes home
+        return no(`Run commands from the project folder (cd ${cwd}), with paths like addons/x/file, instead of cd into folders.`);
+      }
+      continue;
+    }
     if (startsWithAny(part, LOOK)) {
       const flags = SNEAKY_FLAGS[words[0]] ?? [];
       const sneaky = words.find(w => flags.some(f => w === f || w.startsWith(f + '=')));
