@@ -15,7 +15,7 @@ A voice-first coding buddy for kids. They pick what they want to do, press space
   SPACE  🎤 snak   T  ⌨️  skriv   ESC  🏠 tilbage
 ```
 
-While Claude builds, a panel on the right (in a window at least 100 columns wide) shows the files it makes ✨ and changes 🔨 as a little tree. The file it's working on right now gets one sentence about what that kind of file is for and a peek at a few lines of it: a first look at what code is, without a wall of it.
+While Claude builds, a panel on the left (in a window at least 100 columns wide) shows the files it makes ✨ and changes 🔨 as a little tree. The file it's working on right now gets one sentence about what that kind of file is for and a peek at a few lines of it: a first look at what code is, without a wall of it.
 
 Kidex knows nothing about any particular project. A project plugs in with a `kidex.json` (its buttons, its test command, and what Claude may run) and its usual `CLAUDE.md`. Claude follows that file just as it would for a grown-up.
 
@@ -55,7 +55,7 @@ node bin/kidex.mjs path/to/project
 | `Y` / `N` | yes or no to the plan |
 | `T` | type instead of talking |
 | `L` | language: 🇩🇰 Dansk → 🇬🇧 English → 🌍 Auto (remembered on this computer, in `~/.kidex/settings.json`) |
-| `TAB` | from the buttons to a `panel` program; `ESC` (when the program has no menu open to close) goes back. Away from the start screen the program shrinks to a strip on the right, and `TAB` opens it big again |
+| `TAB` | from the buttons to a `panel` program; `ESC` (when the program has no menu open to close) goes back. Away from the start screen the program keeps running on the right, in a narrower terminal it lays itself out for (the files panel goes on the left), and `TAB` opens it big again |
 | `ESC` | back to the start |
 | `Q` | quit (on the start screen) |
 

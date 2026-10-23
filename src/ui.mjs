@@ -70,7 +70,6 @@ const WORDS = {
   guideQuiz: { en: '🤔 While you wait: pick an answer with the arrows and ENTER', da: '🤔 Mens du venter: vælg et svar med pilene og ENTER' },
   guideTyping: { en: '⌨️ Type, then press ENTER', da: '⌨️ Skriv, og tryk ENTER' },
   openIt: { en: 'open', da: 'åbn' },
-  running: { en: 'running', da: 'kører' },
   backToKidex: { en: 'back to Kidex', da: 'tilbage til Kidex' },
   guideDone: { en: '🎉 What now? Pick one and press ENTER', da: '🎉 Hvad nu? Vælg en og tryk ENTER' },
 };
@@ -296,16 +295,22 @@ export function App({ cwd, config, quiet = false }) {
     : prompt?.choices ?? [];
 
   // With a panel program running, the start screen is that program, with the buttons in a column on the left.
-  // Elsewhere it shrinks to a strip on the right, and TAB makes it big again (with Kidex as a card on the left).
+  // Elsewhere it keeps running on the right, narrower, and TAB makes it big again (with Kidex as a card on the left).
   const panel = usePanel();
   const split = screen === 'home' && panel !== null;
   const strip = screen !== 'home' && panel !== null && columns >= 80;
   const expanded = strip && big;
   const toPanel = (split && onPanel || expanded) && panel.code === null;
-  useEffect(() => resizePanel(columns - COLUMN - 2, rows - 5), [columns, rows]);
+  const side = Math.min(90, Math.max(STRIP, Math.floor(columns * 0.4)));
+  // The program's terminal takes the size of where it is shown, so it lays itself out for it.
+  const beside = strip && !expanded;
+  useEffect(() => {
+    if (beside) resizePanel(side - 2, rows - 3 - STRIP_CHROME);
+    else resizePanel(columns - COLUMN - 2, rows - 5);
+  }, [columns, rows, beside]);
 
-  // While building, wide screens show what happens to the files on the right.
-  const room = columns - (strip ? STRIP : 0);
+  // While building, wide screens show what happens to the files on the left.
+  const room = columns - (strip ? side : 0);
   const showPanel = screen === 'chat' && room >= 100 && Object.keys(files).length + (now ? 1 : 0) > 0;
   const mainWidth = room - (showPanel ? PANEL : 0);
 
@@ -436,6 +441,7 @@ export function App({ cwd, config, quiet = false }) {
         <${Text} color="gray">${cost > 0 ? `$${cost.toFixed(2)}` : ''}<//>
       <//>
       <${Box} flexGrow=${1}>
+        ${showPanel && !expanded && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
         ${expanded ? html`
           <${Box} width=${COLUMN} flexDirection="column" alignItems="center" justifyContent="center">
             <${KidexCard} text=${screen === 'pick' ? w('pick') : lastKidex?.text} status=${guide} color=${guideColor} tick=${tick} busy=${busy} />
@@ -444,8 +450,7 @@ export function App({ cwd, config, quiet = false }) {
             ${middle}
           <//>`}
         ${(split || expanded) && html`<${TerminalView} panel=${panel} focused=${toPanel} width=${columns - COLUMN} height=${rows - 3} note=${panel.code !== null && w('stopped')} />`}
-        ${showPanel && !expanded && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
-        ${strip && !expanded && html`<${PanelStrip} panel=${panel} height=${rows - 3} open=${w('openIt')} stopped=${w('stopped')} running=${w('running')} />`}
+        ${beside && html`<${PanelStrip} panel=${panel} width=${side} height=${rows - 3} open=${w('openIt')} stopped=${w('stopped')} />`}
       <//>
       ${shownGuide && html`<${Box} justifyContent="center"><${Text} bold color=${guideColor}>${shownGuide}<//><//>`}
       <${Box} justifyContent="center" gap=${3}>
@@ -502,20 +507,23 @@ function Tiles({ items, sel, columns, small }) {
 const COLUMN = 28;
 const STRIP = 30;
 
-/** The panel program, small: its title and the top of its screen. TAB opens it. */
-function PanelStrip({ panel, height, open, stopped, running: runningWord }) {
+/**
+ * The panel program on the right while kids build: its whole screen, laid out for this width
+ * (its terminal is resized to fit), under its title. TAB opens it.
+ */
+function PanelStrip({ panel, width, height, open, stopped }) {
   const running = panel.code === null;
-  const lines = panel.lines.slice(0, Math.max(0, height - 5));
   return html`
-    <${Box} width=${STRIP} height=${height} flexDirection="column" borderStyle="round" borderColor="gray" paddingX=${1}>
-      <${Text} bold wrap="truncate-end">${panel.title}<//>
-      <${Text} color=${running ? 'green' : 'yellow'} wrap="truncate-end">${running ? `● ${runningWord}` : `■ ${stopped}`}<//>
+    <${Box} width=${width} height=${height} flexDirection="column" borderStyle="round" borderColor="gray">
+      <${Text} bold wrap="truncate-end"> ${running ? html`<${Text} color="green">●<//>` : html`<${Text} color="yellow">■<//>`} ${panel.title}<//>
       <${Box} flexDirection="column" flexGrow=${1} overflow="hidden">
-        ${lines.map((l, i) => html`<${Text} key=${i} dimColor wrap="truncate-end">${l}<//>`)}
+        ${panel.lines.slice(0, height - STRIP_CHROME).map((l, i) => html`<${Text} key=${i} wrap="truncate-end">${l}<//>`)}
       <//>
-      <${Text} color="gray"><${Text} inverse bold> TAB <//> ${open}<//>
+      <${Text} color=${running ? 'gray' : 'yellow'} wrap="truncate-end"> <${Text} inverse bold> TAB <//> ${running ? open : stopped}<//>
     <//>`;
 }
+
+const STRIP_CHROME = 4; // the strip's border, title and TAB line
 
 /** Kidex, small, while the panel program is big: what Kidex said last, and whose turn it is. */
 function KidexCard({ text, status, color, tick, busy }) {
