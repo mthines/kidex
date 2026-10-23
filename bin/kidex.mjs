@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // kidex [folder]            open Kidex on a project (default: this folder)
 // kidex doctor              check the microphone, speech, and voices
-// kidex setup               download the speech model (~470 MB)
+// kidex setup               download the speech model (~470 MB) and the Danish Piper voice
 // kidex setup voice [da en]  install Piper, an open-source voice that runs on this Mac (default: da)
 // kidex run [folder] --say "make a cake" [--action new] [--pick name]
 //                           no screen: answers every question with the first
@@ -92,11 +92,16 @@ Read & Speak → the ⓘ to the right of "System voice". (Apple has none for Dan
 
 function setup() {
   if (args[0] === 'voice') return setupVoice(args.slice(1));
-  if (fs.existsSync(MODEL)) { console.log(`Already there: ${MODEL}`); return; }
-  fs.mkdirSync(path.dirname(MODEL), { recursive: true });
-  console.log(`Downloading the speech model (~470 MB) to ${MODEL}`);
-  const r = spawnSync('curl', ['-L', '--fail', '-o', MODEL, MODEL_URL], { stdio: 'inherit' });
-  if (r.status !== 0) { fs.rmSync(MODEL, { force: true }); process.exit(1); }
+  // Everything a new Mac needs: the model that hears the kids, and the Danish Piper voice that talks back.
+  if (fs.existsSync(MODEL)) console.log(`Already there: ${MODEL}`);
+  else {
+    fs.mkdirSync(path.dirname(MODEL), { recursive: true });
+    console.log(`Downloading the speech model (~470 MB) to ${MODEL}`);
+    const r = spawnSync('curl', ['-L', '--fail', '-o', MODEL, MODEL_URL], { stdio: 'inherit' });
+    if (r.status !== 0) { fs.rmSync(MODEL, { force: true }); process.exit(1); }
+  }
+  if (piperModel('da')) console.log(`Already there: Piper voice ${path.basename(piperModel('da'), '.onnx')}`);
+  else setupVoice(['da']);
 }
 
 /**

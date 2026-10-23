@@ -24,7 +24,7 @@ Kidex knows nothing about any particular project. A project plugs in with a `kid
 ```bash
 brew install ffmpeg whisper-cpp
 npm install
-node bin/kidex.mjs setup     # downloads the speech model (~470 MB) to ~/.kidex
+node bin/kidex.mjs setup     # downloads the speech model (~470 MB) and the Danish voice to ~/.kidex
 node bin/kidex.mjs doctor    # checks the mic, speech, and voices
 ```
 
@@ -32,13 +32,13 @@ Kidex runs Claude through the [Claude Agent SDK](https://code.claude.com/docs/en
 
 Speech never leaves the machine: [whisper.cpp](https://github.com/ggml-org/whisper.cpp) turns talking into text, and Kidex talks back with a voice that runs on the Mac too.
 
-For a natural voice, install [Piper](https://github.com/OHF-Voice/piper1-gpl), a free, open-source voice engine (Danish by default; add `en` or any [Piper voice](https://huggingface.co/rhasspy/piper-voices) name):
+Kidex's default voice is [Piper](https://github.com/OHF-Voice/piper1-gpl), a free, open-source voice engine, with its Danish voice `da_DK-talesyntese-medium`. `kidex setup` installs it; for more languages, add them (`en`, or any [Piper voice](https://huggingface.co/rhasspy/piper-voices) name):
 
 ```bash
-node bin/kidex.mjs setup voice da en
+node bin/kidex.mjs setup voice en
 ```
 
-It puts Python, Piper, and the voices in `~/.kidex` and installs `espeak-ng` with Homebrew. (Piper's Mac package can't find its own pronunciation data, so Kidex asks `espeak-ng` for the pronunciation and gives that to the voice.) Without Piper, Kidex uses macOS `say` with the best voice installed: Premium, then Enhanced, then the ordinary one. Apple's better voices are downloaded in System Settings → Accessibility → Read & Speak → the ⓘ to the right of System voice; Danish has none. `kidex doctor` shows which voice each language gets.
+Setup puts Python, Piper, and the voices in `~/.kidex` and installs `espeak-ng` with Homebrew. (Piper's Mac package can't find its own pronunciation data, so Kidex asks `espeak-ng` for the pronunciation and gives that to the voice.) Without Piper, Kidex uses macOS `say` with the best voice installed: Premium, then Enhanced, then the ordinary one. Apple's better voices are downloaded in System Settings → Accessibility → Read & Speak → the ⓘ to the right of System voice; Danish has none. `kidex doctor` shows which voice each language gets.
 
 The first time a kid talks, macOS asks whether the terminal may use the microphone.
 
