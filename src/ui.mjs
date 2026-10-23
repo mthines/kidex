@@ -1,7 +1,7 @@
 // The screen kids see: big buttons, push-to-talk, and pictures.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, Text, useApp, useInput, useWindowSize } from 'ink';
 import htm from 'htm';
 import { createSession } from './session.mjs';
 import { spawn } from 'node:child_process';
@@ -19,7 +19,11 @@ const WORDS = {
   yes: { en: 'Yes!', da: 'Ja!' },
   no: { en: 'No', da: 'Nej' },
   talk: { en: 'talk', da: 'snak' },
-  stopTalk: { en: 'I am listening… press SPACE when you are done', da: 'Jeg lytter… tryk MELLEMRUM når du er færdig' },
+  listening: { en: 'I am listening…', da: 'Jeg lytter…' },
+  stopTalk: { en: 'Press SPACE when you are done', da: 'Tryk MELLEMRUM når du er færdig' },
+  done: { en: 'done', da: 'færdig' },
+  choose: { en: 'choose', da: 'vælg' },
+  send: { en: 'send', da: 'send' },
   hearing: { en: 'Let me hear…', da: 'Lad mig høre…' },
   type: { en: 'type', da: 'skriv' },
   back: { en: 'back', da: 'tilbage' },
@@ -44,6 +48,7 @@ function systemLang() {
 
 export function App({ cwd, config, quiet = false }) {
   const { exit } = useApp();
+  const { columns, rows } = useWindowSize();
   const [can] = useState(abilities); // runs shell checks: once, not on every render
   const canTalk = can.record && can.transcribe;
 
@@ -94,11 +99,6 @@ export function App({ cwd, config, quiet = false }) {
   const say = (who, text) => setLines(l => [...l.slice(-30), { who, text }]);
   const voice = text => { if (!quiet) speak(text, { lang: langRef.current, voices: config.voices }); };
 
-  useEffect(() => {
-    if (screen === 'home') voice(w('hello'));
-    return () => hush();
-  }, [screen]);
-
   function onEvent(e) {
     switch (e.type) {
       case 'speak':
@@ -114,7 +114,7 @@ export function App({ cwd, config, quiet = false }) {
       case 'picture':
         setDrawn(d => [...d.filter(f => f !== e.file), e.file].slice(-3)); break;
       case 'blocked':
-        say('lock', e.why); break;
+        break; // the guard's notes are for grown-ups, not the kids
       case 'done':
         say('kidex', e.summary); voice(e.summary);
         setPrompt({ kind: 'done', pictures: e.pictures }); setBusy(false); break;
@@ -198,8 +198,12 @@ export function App({ cwd, config, quiet = false }) {
     if (screen === 'home' && input === 'q') { exit(); return; }
 
     const n = choices.length;
-    if (n && (key.downArrow || key.rightArrow)) { setSel(s => (s + 1) % n); return; }
-    if (n && (key.upArrow || key.leftArrow)) { setSel(s => (s - 1 + n) % n); return; }
+    // Tiles sit in a grid: left/right move one, up/down a whole row.
+    const row = perRowFor(n, columns, screen === 'pick');
+    if (n && key.rightArrow) { setSel(s => (s + 1) % n); return; }
+    if (n && key.leftArrow) { setSel(s => (s - 1 + n) % n); return; }
+    if (n && key.downArrow) { setSel(s => (s + row < n ? s + row : s % row)); return; }
+    if (n && key.upArrow) { setSel(s => (s - row >= 0 ? s - row : Math.min(n - 1, s + row * Math.floor((n - 1 - s) / row)))); return; }
     const digit = Number(input);
     const chosen = key.return ? sel : digit >= 1 && digit <= n ? digit - 1 : null;
 
@@ -222,68 +226,109 @@ export function App({ cwd, config, quiet = false }) {
     }
   });
 
+
+  const lastKidex = [...lines].reverse().find(l => l.who === 'kidex' || l.who === 'error');
+  const lastKid = [...lines].reverse().find(l => l.who === 'kid');
+  const flag = LANGUAGES.find(l => l.id === language) ?? LANGUAGES[2];
+
+  let middle;
+  if (screen === 'home') {
+    middle = html`
+      <${Title}>${w('hello')}<//>
+      <${Tiles} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${sel} columns=${columns} />`;
+  } else if (screen === 'pick') {
+    middle = html`
+      <${Title}>${w('pick')}<//>
+      <${Tiles} items=${picks.map(p => ({ emoji: '🧩', text: nice(p) }))} sel=${sel} columns=${columns} small />`;
+  } else {
+    const shown = prompt?.kind === 'done' ? prompt.pictures : drawn;
+    middle = html`
+      ${lastKid && html`<${Text} color="cyan">🧒 ${lastKid.text}<//>`}
+      ${lastKidex && html`<${Bubble} error=${lastKidex.who === 'error'} width=${Math.min(72, columns - 8)}>${lastKidex.text}<//>`}
+      <${Pictures} files=${shown} />
+      ${busy && html`<${Working} tick=${tick} activity=${activity} label=${w('working')} />`}
+      ${!busy && ear === 'idle' && typing === null && choices.length > 0 && html`<${Tiles} items=${choices.map(splitEmoji)} sel=${sel} columns=${columns} />`}
+      ${ear === 'recording' && html`
+        <${Box} borderStyle="bold" borderColor="red" paddingX=${4} paddingY=${1} marginTop=${1} flexDirection="column" alignItems="center">
+          <${Text} color="red" bold>${tick % 2 ? '🔴' : '⭕'}  ${w('listening')}<//>
+          <${Text} color="gray">${w('stopTalk')}<//>
+        <//>`}
+      ${ear === 'hearing' && html`<${Box} marginTop=${1}><${Text} color="yellow" bold>👂 ${w('hearing')}<//><//>`}
+      ${typing !== null && html`
+        <${Box} borderStyle="round" borderColor="cyan" paddingX=${2} marginTop=${1} width=${Math.min(72, columns - 8)}>
+          <${Text}>${typing}${tick % 2 ? '▌' : ' '}<//>
+        <//>`}`;
+  }
+
+  const hints = typing !== null
+    ? [['⏎', w('send')], ['ESC', w('back')]]
+    : screen === 'chat'
+    ? [!busy && ear === 'idle' && choices.length > 0 && ['⏎', w('choose')], !busy && ear !== 'hearing' && ['␣', ear === 'recording' ? w('done') : w('talk')], !busy && ear === 'idle' && ['T', w('type')], ['ESC', w('back')]]
+    : [['⏎', w('choose')], ['L', `${flag.flag} ${flag.name}`], screen === 'home' ? ['Q', w('quit')] : ['ESC', w('back')]];
+
   return html`
-    <${Box} flexDirection="column" paddingX=${1}>
-      <${Header} name=${config.name} cost=${cost} language=${LANGUAGES.find(l => l.id === language) ?? LANGUAGES[2]} />
-      ${screen === 'home' && html`
-        <${Big}>${w('hello')}<//>
-        <${Buttons} items=${choices} sel=${sel} column />
-        <${Keys} items=${[['↑↓', ''], ['ENTER', '✔'], ['Q', w('quit')]]} />
-      `}
-      ${screen === 'pick' && html`
-        <${Big}>${w('pick')}<//>
-        <${Buttons} items=${choices} sel=${sel} column />
-        <${Keys} items=${[['↑↓', ''], ['ENTER', '✔'], ['ESC', w('back')]]} />
-      `}
-      ${screen === 'chat' && html`
-        <${Chat} lines=${lines} />
-        ${prompt?.kind === 'done' ? html`<${Pictures} files=${prompt.pictures} />` : html`<${Pictures} files=${drawn} />`}
-        ${busy && html`<${Working} tick=${tick} activity=${activity} label=${w('working')} />`}
-        ${!busy && choices.length > 0 && html`<${Buttons} items=${choices} sel=${sel} />`}
-        ${ear === 'recording' && html`<${Box} borderStyle="bold" borderColor="red" paddingX=${2}><${Text} color="red" bold>${tick % 2 ? '🔴' : '⭕'} ${w('stopTalk')}<//><//>`}
-        ${ear === 'hearing' && html`<${Text} color="yellow">👂 ${w('hearing')}<//>`}
-        ${typing !== null && html`<${Box} borderStyle="round" borderColor="cyan" paddingX=${1}><${Text}>⌨️  ${typing}${tick % 2 ? '▌' : ' '}<//><//>`}
-        ${prompt?.kind === 'done' && !busy && html`<${Text} color="gray">${w('more')}<//>`}
-        <${Keys} items=${[
-          !busy && ear !== 'hearing' && ['SPACE', `🎤 ${w('talk')}`],
-          !busy && ['T', `⌨️  ${w('type')}`],
-          ['ESC', `🏠 ${w('back')}`],
-        ].filter(Boolean)} />
-      `}
+    <${Box} width=${columns} height=${rows} flexDirection="column">
+      <${Box} justifyContent="space-between" paddingX=${1}>
+        <${Text} color="gray">🧱 Kidex · ${config.name}<//>
+        <${Text} color="gray">${cost > 0 ? `$${cost.toFixed(2)}` : ''}<//>
+      <//>
+      <${Box} flexGrow=${1} flexDirection="column" alignItems="center" justifyContent="center">
+        ${middle}
+      <//>
+      <${Box} justifyContent="center" gap=${3}>
+        ${hints.filter(Boolean).map(([k, v]) => html`<${Text} key=${k} color="gray"><${Text} inverse bold> ${k} <//> ${v}<//>`)}
+      <//>
     <//>`;
 }
 
-function Header({ name, cost, language }) {
-  return html`
-    <${Box} justifyContent="space-between" marginBottom=${1}>
-      <${Text} bold color="greenBright">🧱 Kidex <${Text} color="gray">· ${name}<//><//>
-      <${Text} color="gray">${cost > 0 ? `$${cost.toFixed(2)}   ` : ''}<${Text} inverse bold> L <//> ${language.flag} ${language.name}<//>
-    <//>`;
+const COLORS = ['green', 'blue', 'magenta', 'yellow', 'cyan', 'red'];
+
+/** "my-mod" → "My mod" */
+const nice = s => s.replace(/[-_]/g, ' ').replace(/^./, c => c.toUpperCase());
+
+/** "🎵 Happy pop" → {emoji: "🎵", text: "Happy pop"} */
+function splitEmoji(s) {
+  const m = /^(\p{Extended_Pictographic}[\p{Extended_Pictographic}\u{FE0F}\u{200D}]*)\s*(.*)$/u.exec(s);
+  return m ? { emoji: m[1], text: m[2] } : { emoji: '', text: s };
 }
 
-const Big = ({ children }) => html`<${Box} marginBottom=${1}><${Text} bold color="cyanBright">${children}<//><//>`;
+const Title = ({ children }) => html`<${Box} marginBottom=${1}><${Text} bold color="cyanBright">${children}<//><//>`;
 
-const COLORS = ['green', 'blue', 'magenta', 'yellow'];
+/** Big centered tiles, a few per row. The selected one is filled with its colour. */
+function perRowFor(n, columns, small) {
+  let perRow = small ? Math.min(n, 4) : n === 4 ? 2 : Math.min(n, 3);
+  while (perRow > 1 && perRow * 24 > columns - 4) perRow--;
+  return perRow;
+}
 
-function Buttons({ items, sel, column }) {
+function Tiles({ items, sel, columns, small }) {
+  const n = items.length;
+  const perRow = perRowFor(n, columns, small);
+  const width = Math.min(small ? 24 : 34, Math.floor((columns - 4) / perRow) - 2);
+  const rowsOf = [];
+  for (let i = 0; i < n; i += perRow) rowsOf.push(items.slice(i, i + perRow).map((item, j) => ({ ...item, i: i + j })));
   return html`
-    <${Box} flexDirection=${column ? 'column' : 'row'} flexWrap="wrap" gap=${column ? 0 : 1}>
-      ${items.map((item, i) => html`
-        <${Box} key=${i} borderStyle=${i === sel ? 'double' : 'round'} borderColor=${i === sel ? 'whiteBright' : COLORS[i % COLORS.length]} paddingX=${2}>
-          <${Text} bold=${i === sel} color=${i === sel ? 'whiteBright' : COLORS[i % COLORS.length]}>${i + 1}  ${item}<//>
+    <${Box} flexDirection="column" alignItems="center">
+      ${rowsOf.map((row, r) => html`
+        <${Box} key=${r} gap=${2}>
+          ${row.map(({ emoji, text, i }) => {
+            const on = i === sel;
+            const color = COLORS[i % COLORS.length];
+            return html`
+              <${Box} key=${i} width=${width} height=${small ? 5 : 7} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'whiteBright' : color}
+                backgroundColor=${on ? color : undefined} flexDirection="column" alignItems="center" justifyContent="center" paddingX=${1}>
+                ${emoji && html`<${Text}>${emoji}<//>`}
+                <${Text} bold color=${on ? 'black' : color} wrap="wrap">${text}<//>
+              <//>`;
+          })}
         <//>`)}
     <//>`;
 }
 
-function Chat({ lines }) {
+function Bubble({ children, error, width }) {
   return html`
-    <${Box} flexDirection="column" marginBottom=${1}>
-      ${lines.slice(-8).map((l, i) => {
-        if (l.who === 'kid') return html`<${Text} key=${i} color="cyan">🧒 ${l.text}<//>`;
-        if (l.who === 'lock') return html`<${Text} key=${i} color="gray" dimColor>🔒 ${l.text}<//>`;
-        if (l.who === 'error') return html`<${Text} key=${i} color="red">😕 ${l.text}<//>`;
-        return html`<${Text} key=${i} color="whiteBright" bold>🤖 ${l.text}<//>`;
-      })}
+    <${Box} borderStyle="round" borderColor=${error ? 'red' : 'whiteBright'} paddingX=${2} paddingY=${1} marginY=${1} width=${width} justifyContent="center">
+      <${Text} bold color=${error ? 'red' : 'whiteBright'}>${error ? '😕 ' : '🤖 '}${children}<//>
     <//>`;
 }
 
@@ -291,8 +336,9 @@ function Working({ tick, activity, label }) {
   const pick = ['⛏️ ', ' ⛏️'][tick % 2];
   const blocks = '🟫'.repeat(tick % 6) + '⬛'.repeat(5 - (tick % 6));
   return html`
-    <${Box} flexDirection="column" marginBottom=${1}>
-      <${Text} color="yellow">${pick} ${blocks}  ${label}…<//>
+    <${Box} flexDirection="column" alignItems="center" marginTop=${1}>
+      <${Text} color="yellow" bold>${pick} ${blocks}<//>
+      <${Text} color="yellow">${label}…<//>
       ${activity && html`<${Text} color="gray">${activity.emoji} ${activity.text}<//>`}
     <//>`;
 }
@@ -306,12 +352,5 @@ function Pictures({ files = [] }) {
   return html`
     <${Box} gap=${2} marginBottom=${1}>
       ${drawn.map(({ f, lines }) => html`<${Box} key=${f} flexDirection="column">${lines.map((l, i) => html`<${Text} key=${i}>${l}<//>`)}<//>`)}
-    <//>`;
-}
-
-function Keys({ items }) {
-  return html`
-    <${Box} gap=${2} marginTop=${1}>
-      ${items.map(([k, v]) => html`<${Text} key=${k}><${Text} inverse bold> ${k} <//> ${v}<//>`)}
     <//>`;
 }

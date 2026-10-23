@@ -29,7 +29,7 @@ async function open() {
   const { render } = await import('ink');
   const React = (await import('react')).default;
   const { App } = await import('../src/ui.mjs');
-  const app = render(React.createElement(App, { cwd, config, quiet }), { exitOnCtrlC: true });
+  const app = render(React.createElement(App, { cwd, config, quiet }), { exitOnCtrlC: true, alternateScreen: true });
   await app.waitUntilExit();
   process.exit(0);
 }
