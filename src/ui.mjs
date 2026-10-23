@@ -54,6 +54,7 @@ export function App({ cwd, config, quiet = false }) {
   const [prompt, setPrompt] = useState(null); // {kind: 'first'|'ask'|'plan'|'done'|'free', choices?, pictures?}
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState(null);
+  const [drawn, setDrawn] = useState([]); // pictures Claude drew this session, shown while it works
   const [ear, setEar] = useState('idle'); // idle | recording | hearing
   const [typing, setTyping] = useState(null);
   const [cost, setCost] = useState(0);
@@ -89,6 +90,8 @@ export function App({ cwd, config, quiet = false }) {
         setPrompt({ kind: 'plan', choices: [`👍 ${w('yes')}`, `👎 ${w('no')}`] }); setSel(0); setBusy(false); break;
       case 'activity':
         setActivity(e); break;
+      case 'picture':
+        setDrawn(d => [...d.filter(f => f !== e.file), e.file].slice(-3)); break;
       case 'blocked':
         say('lock', e.why); break;
       case 'done':
@@ -109,7 +112,7 @@ export function App({ cwd, config, quiet = false }) {
       setScreen('home'); setSel(0);
       return;
     }
-    setAction(a); setPick(p); setLines([]); setScreen('chat');
+    setAction(a); setPick(p); setLines([]); setDrawn([]); setScreen('chat');
     setPrompt({ kind: 'first' });
     session.current = createSession({ cwd, config, onEvent });
     say('kidex', w('tell')); voice(w('tell'));
@@ -212,7 +215,7 @@ export function App({ cwd, config, quiet = false }) {
       `}
       ${screen === 'chat' && html`
         <${Chat} lines=${lines} />
-        ${prompt?.kind === 'done' && html`<${Pictures} files=${prompt.pictures} />`}
+        ${prompt?.kind === 'done' ? html`<${Pictures} files=${prompt.pictures} />` : html`<${Pictures} files=${drawn} />`}
         ${busy && html`<${Working} tick=${tick} activity=${activity} label=${w('working')} />`}
         ${!busy && choices.length > 0 && html`<${Buttons} items=${choices} sel=${sel} />`}
         ${ear === 'recording' && html`<${Box} borderStyle="bold" borderColor="red" paddingX=${2}><${Text} color="red" bold>${tick % 2 ? '🔴' : '⭕'} ${w('stopTalk')}<//><//>`}

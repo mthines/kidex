@@ -11,7 +11,8 @@ const WRITES = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 // Commands that only look at things. Allowed before the plan is approved too.
 const LOOK = [
   'ls', 'cat', 'head', 'tail', 'wc', 'pwd', 'find', 'grep', 'rg', 'tree', 'file', 'stat', 'echo',
-  'git status', 'git diff', 'git log', 'git show', 'node --check', 'jq',
+  'sort', 'cut', 'tr', 'basename', 'dirname', 'diff', 'du', 'true',
+  'git status', 'git diff', 'git log', 'git show', 'git ls-files', 'node --check', 'jq',
 ];
 
 // Never, whatever the project allows.
@@ -55,22 +56,103 @@ function bashOk(command, { cwd, planApproved, allow, deny, denyPaths }) {
     if (command.includes(p)) return no(`Kidex keeps away from ${p}.`);
   }
 
-  for (const raw of command.split(/&&|\|\||;|\||\n/)) {
-    const part = raw.trim().replace(/\s*2>&1\s*$/, '').replace(/\s*>\s*\/dev\/null\s*$/, '').trim();
-    if (!part) continue;
-    if (/(^|\s)\d*>{1,2}/.test(part)) return no('Write files with the Write tool, not with > in a command.');
-    if (/^cd(\s|$)/.test(part)) {
-      const to = part.slice(2).trim() || '.';
-      const ok = pathOk(to, cwd, denyPaths);
-      if (!ok.ok) return ok;
+  const parsed = parse(command);
+  if (parsed.error) return no(parsed.error);
+  for (const r of parsed.redirects) {
+    if (r.op.startsWith('>') && r.target !== '/dev/null') return no('Write files with the Write tool, not with > in a command.');
+    if (r.op === '<') { const ok = pathOk(r.target, cwd, denyPaths); if (!ok.ok) return ok; }
+  }
+
+  for (const words of parsed.segments) {
+    // Paths outside the project are off limits for every command.
+    for (const w of words) {
+      if (w === '/dev/null') continue;
+      if (/^[/~]/.test(w) || w.split('/').includes('..')) {
+        const ok = pathOk(w.replace(/^~/, process.env.HOME ?? '~'), cwd, denyPaths);
+        if (!ok.ok) return ok;
+      }
+    }
+    const part = words.join(' ');
+    if (words[0] === 'cd') continue; // its path was checked above
+    if (startsWithAny(part, LOOK)) {
+      const flags = SNEAKY_FLAGS[words[0]] ?? [];
+      const sneaky = words.find(w => flags.some(f => w === f || w.startsWith(f + '=')));
+      if (sneaky) return no(`${words[0]} ${sneaky} is not allowed in Kidex.`);
       continue;
     }
-    if (startsWithAny(part, LOOK)) continue;
     if (!planApproved) return no('Ask the kid first: call show_plan and wait for a yes before running commands.');
     if (startsWithAny(part, allow)) continue;
-    return no(`Kidex may only run: ${[...allow, ...LOOK].join(', ')}.`);
+    return no(`Kidex may only run: ${[...allow, ...LOOK].join(', ')}. Run one simple command at a time (no loops).`);
   }
   return yes();
+}
+
+// Flags that make a look-only command change or run things.
+const SNEAKY_FLAGS = {
+  find: ['-exec', '-execdir', '-ok', '-okdir', '-delete', '-fprint', '-fprint0', '-fprintf', '-fls'],
+  rg: ['--pre'],
+  sort: ['-o', '--output'],
+  git: ['--output'],
+};
+
+/**
+ * Splits a shell command into its simple commands (lists of words, quotes
+ * removed) and its redirects. Quotes and backslashes are respected, so
+ * `grep "a\|b"` is one command.
+ */
+export function parse(command) {
+  const segments = [];
+  const redirects = [];
+  let words = [];
+  let word = '';
+  let inWord = false;
+  const endWord = () => { if (inWord) words.push(word); word = ''; inWord = false; };
+  const endSegment = () => { endWord(); if (words.length) segments.push(words); words = []; };
+
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (c === "'") {
+      const j = command.indexOf("'", i + 1);
+      if (j < 0) return { error: 'A quote is not closed.' };
+      word += command.slice(i + 1, j); inWord = true; i = j;
+    } else if (c === '"') {
+      let j = i + 1;
+      for (; j < command.length && command[j] !== '"'; j++) {
+        if (command[j] === '\\' && '"\\$`'.includes(command[j + 1])) j++;
+        word += command[j];
+      }
+      if (j >= command.length) return { error: 'A quote is not closed.' };
+      inWord = true; i = j;
+    } else if (c === '\\') {
+      word += command[i + 1] ?? ''; inWord = true; i++;
+    } else if (c === ' ' || c === '\t') {
+      endWord();
+    } else if ('&|;\n'.includes(c)) {
+      if (c === '&' && command[i + 1] === '>') return { error: 'Write files with the Write tool, not with > in a command.' };
+      endSegment();
+      if ((c === '&' || c === '|') && command[i + 1] === c) i++;
+    } else if (c === '>' || c === '<') {
+      if (/^\d+$/.test(word)) { word = ''; inWord = false; } else endWord(); // "2>" belongs to the redirect
+      let op = c;
+      if (command[i + 1] === '>' || command[i + 1] === '&') op += command[++i];
+      while (command[i + 1] === ' ') i++;
+      let target = '';
+      while (i + 1 < command.length && !' \t&|;\n<>'.includes(command[i + 1])) target += command[++i];
+      if (op.endsWith('&')) continue; // 2>&1: pointing one output at another
+      if (c === '>' && op === '>&') continue;
+      redirects.push({ op, target });
+    } else if (c === '(' || c === ')' || c === '{' && !inWord) {
+      return { error: 'Run one simple command at a time (no ( ) groups or loops).' };
+    } else {
+      word += c; inWord = true;
+    }
+  }
+  endSegment();
+  // Shell keywords mean loops and ifs, which we don't try to understand.
+  if (segments.some(s => ['for', 'while', 'until', 'if', 'do', 'done', 'then', 'function'].includes(s[0]))) {
+    return { error: 'Run one simple command at a time (no loops or ifs).' };
+  }
+  return { segments, redirects };
 }
 
 function pathOk(p, cwd, denyPaths) {

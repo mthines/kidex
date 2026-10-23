@@ -28,6 +28,27 @@ export function changedPictures(cwd, since, { max = 4, depth = 7 } = {}) {
   return found.sort((a, b) => b.t - a.t).slice(0, max).map(f => f.file);
 }
 
+/** Pixel art → PNG. rows are strings, one character per pixel, looked up in palette ("#rrggbb" or "#rrggbbaa"). */
+export function writePixels(file, rows, palette) {
+  const chars = rows.map(r => [...r]);
+  const width = Math.max(...chars.map(r => r.length));
+  const png = new PNG({ width, height: rows.length });
+  chars.forEach((row, y) => {
+    for (let x = 0; x < width; x++) {
+      const hex = palette[row[x]];
+      const i = (y * width + x) * 4;
+      if (!hex) { png.data[i + 3] = 0; continue; }
+      png.data[i] = parseInt(hex.slice(1, 3), 16);
+      png.data[i + 1] = parseInt(hex.slice(3, 5), 16);
+      png.data[i + 2] = parseInt(hex.slice(5, 7), 16);
+      png.data[i + 3] = hex.length > 7 ? parseInt(hex.slice(7, 9), 16) : 255;
+    }
+  });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, PNG.sync.write(png));
+  return file;
+}
+
 /** Lines of ANSI text drawing the image, at most `width` characters wide. */
 export function render(file, { width = 32 } = {}) {
   const png = PNG.sync.read(fs.readFileSync(file));

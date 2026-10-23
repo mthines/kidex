@@ -7,11 +7,12 @@
 
 import { query, createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 import { z } from 'zod';
 import { check } from './guard.mjs';
 import { fill } from './config.mjs';
 import { systemPrompt, firstMessage } from './prompt.mjs';
-import { changedPictures } from './pictures.mjs';
+import { changedPictures, writePixels } from './pictures.mjs';
 
 const YES = /^\s*(yes|yeah|yep|yup|ok|okay|sure|do it|go|ja|jo|jep|jeps|jaaa*|okay|gør det|kør|fedt|super)\b[\s!.]*$/i;
 export const isYes = s => YES.test(s);
@@ -58,6 +59,20 @@ export function createSession({ cwd, config, onEvent }) {
       }, async ({ text }) => {
         emit({ type: 'speak', text });
         return textResult('Told them.');
+      }),
+      tool('draw_picture', 'Write a PNG picture (pixel art) without running a script. rows: one string per pixel row, one character per pixel; each character is a key of palette ("." or any key missing from palette is see-through). Use the size the project needs (e.g. 16x16).', {
+        file: z.string().describe('Path of the .png to write, inside the project'),
+        palette: z.record(z.string().length(1), z.string().regex(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/)),
+        rows: z.array(z.string()).min(1).max(256),
+      }, async ({ file, palette, rows }) => {
+        const ok = check({ tool: 'Write', input: { file_path: file }, cwd, planApproved, deny: config.deny });
+        if (!ok.ok) return { ...textResult(ok.why), isError: true };
+        if (!file.toLowerCase().endsWith('.png')) return { ...textResult('The file must end in .png'), isError: true };
+        const width = Math.max(...rows.map(r => [...r].length));
+        const abs = writePixels(path.resolve(cwd, file), rows, palette);
+        emit({ type: 'activity', emoji: '🎨', text: path.basename(abs) });
+        emit({ type: 'picture', file: abs });
+        return textResult(`Wrote ${file} (${width}x${rows.length}).`);
       }),
       tool('all_done', 'Finish: tell the child what you made and how to try it, in 1-3 short sentences.', {
         summary: z.string(),

@@ -104,7 +104,7 @@ It prints one JSON event per line and exits 0 if Claude finished with `all_done`
 | File | |
 | --- | --- |
 | `src/ui.mjs` | the screen ([Ink](https://github.com/vadimdemedes/ink)) |
-| `src/session.mjs` | one conversation: Claude Agent SDK `query()` with Kidex's own tools (`ask_kid`, `show_plan`, `tell_kid`, `all_done`) |
+| `src/session.mjs` | one conversation: Claude Agent SDK `query()` with Kidex's own tools (`ask_kid`, `show_plan`, `tell_kid`, `draw_picture`, `all_done`). `draw_picture` writes pixel art to a PNG, so Claude never needs to run a script to make a picture. |
 | `src/guard.mjs` | what Claude may do |
 | `src/voice.mjs` | ffmpeg + whisper.cpp in, `say` out |
 | `src/pictures.mjs` | draws the PNGs Claude made, right in the terminal |

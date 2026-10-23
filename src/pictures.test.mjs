@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { PNG } from 'pngjs';
-import { render, changedPictures } from './pictures.mjs';
+import { render, changedPictures, writePixels } from './pictures.mjs';
 import { cleanTranscript, guessLang, stripForSpeech } from './voice.mjs';
 import { isYes } from './session.mjs';
 
@@ -20,6 +20,16 @@ test('a 16×16 picture is drawn 32 characters wide, two pixels per line', () => 
   assert.equal(lines[0].replace(/\x1b\[[0-9;]*m/g, '').length, 32);
   assert.deepEqual(changedPictures(dir, 0), [file]);
   assert.deepEqual(changedPictures(dir, Date.now() + 1000), []);
+});
+
+test('pixel art rows become a PNG with see-through gaps', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kidex-'));
+  const file = writePixels(path.join(dir, 'a/b.png'), ['r.', '.g'], { r: '#ff0000', g: '#00ff0080' });
+  const png = PNG.sync.read(fs.readFileSync(file));
+  assert.equal(png.width, 2);
+  assert.deepEqual([...png.data.slice(0, 4)], [255, 0, 0, 255]);
+  assert.equal(png.data[7], 0);
+  assert.deepEqual([...png.data.slice(12, 16)], [0, 255, 0, 128]);
 });
 
 test('speech bits', () => {

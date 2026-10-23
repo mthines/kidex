@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { check } from './guard.mjs';
+import { check, parse } from './guard.mjs';
 
 const cwd = '/home/kid/project';
 const base = { cwd, allow: ['npm run new', './mc test'], deny: ['./mc restart', 'server/data/'] };
@@ -42,6 +42,27 @@ test('no sneaky shell tricks', () => {
   assert.equal(ok('Bash', { command: 'echo hi > /etc/hosts' }), false);
   assert.equal(ok('Bash', { command: 'cd .. && ls' }), false);
   assert.equal(ok('Bash', { command: 'ls >/dev/null' }), true);
+});
+
+test('quotes are understood, so patterns with | are one command', () => {
+  assert.equal(ok('Bash', { command: 'grep -rn "useItem\\|eat" addons --include=e2e.js | head -20' }, false), true);
+  assert.equal(ok('Bash', { command: "rg -ln 't.player|until' tools 2>/dev/null" }, false), true);
+  assert.equal(ok('Bash', { command: 'cat "a b.txt" 2>&1 | sort | head' }, false), true);
+  assert.deepEqual(parse('a "x|y" | b').segments, [['a', 'x|y'], ['b']]);
+});
+
+test('look-only commands stay look-only', () => {
+  assert.equal(ok('Bash', { command: 'find . -name "*.tmp" -delete' }), false);
+  assert.equal(ok('Bash', { command: 'find . -exec cat {} ;' }), false);
+  assert.equal(ok('Bash', { command: 'rg --pre=./evil x' }), false);
+  assert.equal(ok('Bash', { command: 'sort -o out.txt in.txt' }), false);
+  assert.equal(ok('Bash', { command: 'grep -o "item[a-z]*" a.json' }, false), true);
+  assert.equal(ok('Bash', { command: 'git diff --output=x.patch' }), false);
+  assert.equal(ok('Bash', { command: 'cat /etc/passwd' }), false);
+  assert.equal(ok('Bash', { command: 'cat ~/notes.txt' }), false);
+  assert.equal(ok('Bash', { command: 'for f in *; do cat $f; done' }), false);
+  assert.equal(ok('Bash', { command: 'cat < /etc/hosts' }), false);
+  assert.equal(ok('Bash', { command: 'ls &> out.txt' }), false);
 });
 
 test('only known tools', () => {
