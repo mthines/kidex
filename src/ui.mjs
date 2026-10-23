@@ -10,13 +10,15 @@ import { text as label, pickChoices, fill, loadSettings, saveSettings } from './
 import { abilities, startRecording, transcribe, speak, hush, guessLang } from './voice.mjs';
 import { render as renderPicture } from './pictures.mjs';
 import { describe, peek } from './files.mjs';
-import { openPanel, togglePanel, usePanel, CommandPanel } from './panel.mjs';
+import { openPanel, resizePanel, pressKey, escapePanel, usePanel, TerminalView } from './panel.mjs';
 
 const html = htm.bind(React.createElement);
 
 const WORDS = {
   hello: { en: 'Hi! What do you want to do?', da: 'Hej! Hvad vil du lave?' },
   pick: { en: 'Which one?', da: 'Hvilken en?' },
+  buttons: { en: 'buttons', da: 'knapper' },
+  stopped: { en: 'It stopped. Press ENTER to start it again.', da: 'Den er stoppet. Tryk ENTER for at starte den igen.' },
   tell: { en: 'Tell me about it! Press space and talk.', da: 'Fortæl mig om det! Tryk på mellemrum og snak.' },
   right: { en: 'Is that right?', da: 'Er det rigtigt?' },
   yes: { en: 'Yes!', da: 'Ja!' },
@@ -94,6 +96,7 @@ export function App({ cwd, config, quiet = false }) {
   const [typing, setTyping] = useState(null);
   const [cost, setCost] = useState(0);
   const [tick, setTick] = useState(0);
+  const [onPanel, setOnPanel] = useState(false); // keys go to the panel's program, not the buttons
 
   const session = useRef(null);
   const recording = useRef(null);
@@ -157,9 +160,9 @@ export function App({ cwd, config, quiet = false }) {
       return;
     }
     if (a.panel) {
-      // A command that keeps running, like a dev server: its output shows on the right.
-      openPanel(fill(a.panel, { pick: p }), { cwd, title: `${a.emoji} ${label(a.label, lang)}` });
-      setScreen('home'); setSel(0);
+      // A program that keeps running, like a dev screen: it fills the screen, the buttons move to the left.
+      openPanel(fill(a.panel, { pick: p }), { cwd, title: `${a.emoji} ${label(a.label, lang)}`, cols: columns - COLUMN - 2, rows: rows - 4 });
+      setScreen('home'); setSel(config.actions.indexOf(a)); setOnPanel(true);
       return;
     }
     setAction(a); setPick(p); setLines([]); setDrawn([]); setFiles({}); setNow(null); setScreen('chat');
@@ -207,7 +210,7 @@ export function App({ cwd, config, quiet = false }) {
     recording.current?.cancel?.(); setEar('idle');
     await session.current?.stop();
     session.current = null;
-    setScreen('home'); setSel(0); setPrompt(null); setBusy(false); setActivity(null);
+    setScreen('home'); setSel(0); setPrompt(null); setBusy(false); setActivity(null); setOnPanel(false);
   }
 
   const choices = screen === 'home' ? config.actions.map(a => `${a.emoji} ${label(a.label, lang)}`)
@@ -216,9 +219,13 @@ export function App({ cwd, config, quiet = false }) {
 
   // While building, wide screens show what happens to the files on the right.
   const showPanel = screen === 'chat' && columns >= 100 && Object.keys(files).length + (now ? 1 : 0) > 0;
+  const mainWidth = showPanel ? columns - PANEL : columns;
+
+  // With a panel program running, the start screen is that program, with the buttons in a column on the left.
   const panel = usePanel();
-  const showCommand = panel && !panel.hidden && columns >= 100;
-  const mainWidth = showPanel || showCommand ? columns - PANEL : columns;
+  const split = screen === 'home' && panel !== null;
+  const toPanel = split && onPanel && panel.code === null;
+  useEffect(() => resizePanel(columns - COLUMN - 2, rows - 4), [columns, rows]);
 
   useInput((input, key) => {
     if (typing !== null) {
@@ -228,14 +235,15 @@ export function App({ cwd, config, quiet = false }) {
       else if (input && !key.ctrl && !key.meta) setTyping(t => t + input);
       return;
     }
+    if (toPanel) { if (key.escape) escapePanel(() => setOnPanel(false)); else pressKey(input, key); return; }
+    if (split && key.tab) { setOnPanel(true); return; }
     if (key.escape) { if (screen !== 'home') home(); return; }
     if ((input === 'l' || input === 'L') && ear === 'idle') { nextLanguage(); return; }
-    if ((input === 'p' || input === 'P') && panel) { togglePanel(); return; }
     if (screen === 'home' && input === 'q') { exit(); return; }
 
     const n = choices.length;
     // Tiles sit in a grid: left/right move one, up/down a whole row.
-    const row = perRowFor(n, mainWidth, screen === 'pick');
+    const row = split ? 1 : perRowFor(n, mainWidth, screen === 'pick');
     if (n && key.rightArrow) { setSel(s => (s + 1) % n); return; }
     if (n && key.leftArrow) { setSel(s => (s - 1 + n) % n); return; }
     if (n && key.downArrow) { setSel(s => (s + row < n ? s + row : s % row)); return; }
@@ -268,7 +276,9 @@ export function App({ cwd, config, quiet = false }) {
   const flag = LANGUAGES.find(l => l.id === language) ?? LANGUAGES[2];
 
   let middle;
-  if (screen === 'home') {
+  if (split) {
+    middle = html`<${Column} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${toPanel ? -1 : sel} />`;
+  } else if (screen === 'home') {
     middle = html`<${Box} flexDirection="column" alignItems="center">
       <${Title}>${w('hello')}<//>
       <${Tiles} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${sel} columns=${mainWidth} /><//>`;
@@ -300,7 +310,9 @@ export function App({ cwd, config, quiet = false }) {
     ? [['⏎', w('send')], ['ESC', w('back')]]
     : screen === 'chat'
     ? [!busy && ear === 'idle' && choices.length > 0 && ['⏎', w('choose')], !busy && ear !== 'hearing' && ['␣', ear === 'recording' ? w('done') : w('talk')], !busy && ear === 'idle' && ['T', w('type')], ['ESC', w('back')]]
-    : [['⏎', w('choose')], ['L', `${flag.flag} ${flag.name}`], panel && ['P', panel.title], screen === 'home' ? ['Q', w('quit')] : ['ESC', w('back')]];
+    : toPanel
+    ? [['ESC', `🧱 ${w('buttons')}`]]
+    : [['⏎', w('choose')], split && ['TAB', panel.title], ['L', `${flag.flag} ${flag.name}`], screen === 'home' ? ['Q', w('quit')] : ['ESC', w('back')]];
 
   return html`
     <${Box} width=${columns} height=${rows} flexDirection="column">
@@ -309,14 +321,11 @@ export function App({ cwd, config, quiet = false }) {
         <${Text} color="gray">${cost > 0 ? `$${cost.toFixed(2)}` : ''}<//>
       <//>
       <${Box} flexGrow=${1}>
-        <${Box} flexGrow=${1} flexDirection="column" alignItems="center" justifyContent="center">
+        <${Box} flexGrow=${split ? 0 : 1} width=${split ? COLUMN : undefined} flexDirection="column" alignItems="center" justifyContent="center">
           ${middle}
         <//>
-        ${(showPanel || showCommand) && html`
-          <${Box} flexDirection="column">
-            ${showPanel && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
-            ${showCommand && html`<${CommandPanel} panel=${panel} width=${PANEL} height=${showPanel ? 10 : rows - 2} />`}
-          <//>`}
+        ${split && html`<${TerminalView} panel=${panel} focused=${toPanel} width=${columns - COLUMN} height=${rows - 2} note=${panel.code !== null && w('stopped')} />`}
+        ${showPanel && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
       <//>
       <${Box} justifyContent="center" gap=${3}>
         ${hints.filter(Boolean).map(([k, v]) => html`<${Text} key=${k} color="gray"><${Text} inverse bold> ${k} <//> ${v}<//>`)}
@@ -365,6 +374,24 @@ function Tiles({ items, sel, columns, small }) {
               <//>`;
           })}
         <//>`)}
+    <//>`;
+}
+
+const COLUMN = 28;
+
+/** The buttons as one short column, beside a panel program. sel -1: none chosen, the keys go to the program. */
+function Column({ items, sel }) {
+  return html`
+    <${Box} flexDirection="column" alignItems="center">
+      ${items.map(({ emoji, text }, i) => {
+        const on = i === sel;
+        const color = COLORS[i % COLORS.length];
+        return html`
+          <${Box} key=${i} width=${COLUMN - 2} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'whiteBright' : sel < 0 ? 'gray' : color}
+            backgroundColor=${on ? color : undefined} paddingX=${1}>
+            <${Text} bold color=${on ? 'black' : sel < 0 ? 'gray' : color} wrap="truncate-end">${emoji} ${text}<//>
+          <//>`;
+      })}
     <//>`;
 }
 

@@ -45,7 +45,7 @@ node bin/kidex.mjs path/to/project
 | `Y` / `N` | yes or no to the plan |
 | `T` | type instead of talking |
 | `L` | language: 🇩🇰 Dansk → 🇬🇧 English → 🌍 Auto (remembered on this computer, in `~/.kidex/settings.json`) |
-| `P` | hide or show the side panel of a `panel` button (the command keeps running) |
+| `TAB` | from the buttons to a `panel` program; `ESC` (when the program has no menu open to close) goes back |
 | `ESC` | back to the start |
 | `Q` | quit (on the start screen) |
 
@@ -81,7 +81,7 @@ Put a `kidex.json` in the project's folder:
 - `explain` (optional) says in kid words what a project's own files are, for the files panel: keys are file names (`"kit.json"`) or folders (`"textures/"`), values a string or `{en, da}`. Without it, files are explained by type (code, settings, picture, test…).
 - `pick` first shows the folders matching `dir/*` as buttons, and `{pick}` is replaced by the chosen one.
 - `run` runs a plain command without Claude, e.g. to open or play something.
-- `panel` runs a command that keeps going, like a dev server, and shows its output in a panel on the right (on screens at least 100 columns wide). Pressing the button again shows the panel if `P` hid it; the command stops when Kidex quits. It gets no keyboard and no terminal, so a command with its own full-screen view should print plain lines when it isn't in a terminal.
+- `panel` runs a program that keeps going, like a dev server with its own full-screen view, in a terminal of its own. It fills the start screen, and the buttons move to a column on the left. Every key goes to the program, except `ESC` when the program has no menu open to close: that goes back to the buttons (`TAB` or the button returns). If the program quits, the button starts it again; it stops when Kidex quits.
 
 Without a `kidex.json`, Kidex shows three general buttons and Claude may only look, not run anything.
 
@@ -116,5 +116,5 @@ It prints one JSON event per line and exits 0 if Claude finished with `all_done`
 | `src/guard.mjs` | what Claude may do |
 | `src/voice.mjs` | ffmpeg + whisper.cpp in, `say` out |
 | `src/pictures.mjs` | draws the PNGs Claude made, right in the terminal |
-| `src/panel.mjs` | runs a `panel` button's command and shows its output on the right |
+| `src/panel.mjs` | runs a `panel` button's program in a pseudo-terminal ([node-pty](https://github.com/microsoft/node-pty)) and draws its screen ([xterm.js](https://github.com/xtermjs/xterm.js) headless) |
 | `src/prompt.mjs` | how Claude should talk to kids |
