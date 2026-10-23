@@ -1,11 +1,11 @@
 // The screen kids see: big buttons, push-to-talk, and pictures.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import htm from 'htm';
 import { createSession } from './session.mjs';
 import { spawn } from 'node:child_process';
-import { text as label, pickChoices, fill } from './config.mjs';
+import { text as label, pickChoices, fill, loadSettings, saveSettings } from './config.mjs';
 import { abilities, startRecording, transcribe, speak, hush, guessLang } from './voice.mjs';
 import { render as renderPicture } from './pictures.mjs';
 
@@ -31,6 +31,12 @@ const WORDS = {
   noMic: { en: 'No microphone helper here, so press T and type.', da: 'Mikrofonen virker ikke her, så tryk T og skriv.' },
 };
 
+const LANGUAGES = [
+  { id: 'da', flag: '🇩🇰', name: 'Dansk', say: 'Nu taler jeg dansk!' },
+  { id: 'en', flag: '🇬🇧', name: 'English', say: 'Now I speak English!' },
+  { id: 'auto', flag: '🌍', name: 'Auto', say: { en: 'I will speak the language you speak!', da: 'Jeg taler det sprog, du taler!' } },
+];
+
 function systemLang() {
   const loc = Intl.DateTimeFormat().resolvedOptions().locale ?? '';
   return loc.startsWith('da') ? 'da' : 'en';
@@ -38,11 +44,23 @@ function systemLang() {
 
 export function App({ cwd, config, quiet = false }) {
   const { exit } = useApp();
-  const can = useRef(abilities()).current;
+  const [can] = useState(abilities); // runs shell checks: once, not on every render
   const canTalk = can.record && can.transcribe;
 
-  const [lang, setLang] = useState(config.language === 'auto' ? systemLang() : config.language);
+  // "da", "en" or "auto". Chosen with L inside Kidex; otherwise kidex.json decides.
+  const [language, setLanguage] = useState(() => loadSettings().language ?? config.language);
+  const [lang, setLang] = useState(() => language === 'auto' ? systemLang() : language); // the language spoken right now
   const w = key => label(WORDS[key], lang);
+
+  function nextLanguage() {
+    const next = LANGUAGES[(LANGUAGES.findIndex(l => l.id === language) + 1) % LANGUAGES.length];
+    setLanguage(next.id);
+    saveSettings({ language: next.id });
+    const now = next.id === 'auto' ? langRef.current : next.id;
+    setLang(now); langRef.current = now;
+    hush();
+    if (!quiet) speak(label(next.say, now), { lang: now, voices: config.voices });
+  }
 
   const [screen, setScreen] = useState('home');
   const [sel, setSel] = useState(0);
@@ -65,10 +83,13 @@ export function App({ cwd, config, quiet = false }) {
   const langRef = useRef(lang);
   langRef.current = lang;
 
+  // The animation clock only runs while something moves, so menus don't redraw for nothing.
+  const animating = busy || ear !== 'idle' || typing !== null;
   useEffect(() => {
+    if (!animating) return;
     const t = setInterval(() => setTick(n => n + 1), 300);
     return () => clearInterval(t);
-  }, []);
+  }, [animating]);
 
   const say = (who, text) => setLines(l => [...l.slice(-30), { who, text }]);
   const voice = text => { if (!quiet) speak(text, { lang: langRef.current, voices: config.voices }); };
@@ -114,7 +135,7 @@ export function App({ cwd, config, quiet = false }) {
     }
     setAction(a); setPick(p); setLines([]); setDrawn([]); setScreen('chat');
     setPrompt({ kind: 'first' });
-    session.current = createSession({ cwd, config, onEvent });
+    session.current = createSession({ cwd, config: { ...config, language }, onEvent });
     say('kidex', w('tell')); voice(w('tell'));
   }
 
@@ -122,7 +143,7 @@ export function App({ cwd, config, quiet = false }) {
     words = words.trim();
     if (!words) return;
     hush();
-    const l = config.language === 'auto' ? guessLang(words, langRef.current) : config.language;
+    const l = language === 'auto' ? guessLang(words, langRef.current) : language;
     setLang(l); langRef.current = l;
     say('kid', words);
     const was = prompt;
@@ -143,7 +164,7 @@ export function App({ cwd, config, quiet = false }) {
     setEar('hearing');
     try {
       const file = await recording.current.stop();
-      const heard = await transcribe(file, config.language === 'auto' ? 'auto' : config.language);
+      const heard = await transcribe(file, language);
       setEar('idle');
       if (heard) submit(heard);
       else { say('kidex', w('again')); voice(w('again')); }
@@ -173,6 +194,7 @@ export function App({ cwd, config, quiet = false }) {
       return;
     }
     if (key.escape) { if (screen !== 'home') home(); return; }
+    if ((input === 'l' || input === 'L') && ear === 'idle') { nextLanguage(); return; }
     if (screen === 'home' && input === 'q') { exit(); return; }
 
     const n = choices.length;
@@ -202,7 +224,7 @@ export function App({ cwd, config, quiet = false }) {
 
   return html`
     <${Box} flexDirection="column" paddingX=${1}>
-      <${Header} name=${config.name} cost=${cost} />
+      <${Header} name=${config.name} cost=${cost} language=${LANGUAGES.find(l => l.id === language) ?? LANGUAGES[2]} />
       ${screen === 'home' && html`
         <${Big}>${w('hello')}<//>
         <${Buttons} items=${choices} sel=${sel} column />
@@ -231,11 +253,11 @@ export function App({ cwd, config, quiet = false }) {
     <//>`;
 }
 
-function Header({ name, cost }) {
+function Header({ name, cost, language }) {
   return html`
     <${Box} justifyContent="space-between" marginBottom=${1}>
       <${Text} bold color="greenBright">🧱 Kidex <${Text} color="gray">· ${name}<//><//>
-      ${cost > 0 && html`<${Text} color="gray">$${cost.toFixed(2)}<//>`}
+      <${Text} color="gray">${cost > 0 ? `$${cost.toFixed(2)}   ` : ''}<${Text} inverse bold> L <//> ${language.flag} ${language.name}<//>
     <//>`;
 }
 
@@ -276,14 +298,14 @@ function Working({ tick, activity, label }) {
 }
 
 function Pictures({ files = [] }) {
-  if (!files.length) return null;
+  // Decoding PNGs is slow; only redo it when the list of files changes.
+  const drawn = useMemo(() => files.map(f => {
+    try { return { f, lines: renderPicture(f, { width: 24 }) }; } catch { return null; }
+  }).filter(Boolean), [files.join('\n')]);
+  if (!drawn.length) return null;
   return html`
     <${Box} gap=${2} marginBottom=${1}>
-      ${files.map(f => {
-        let lines;
-        try { lines = renderPicture(f, { width: 24 }); } catch { return null; }
-        return html`<${Box} key=${f} flexDirection="column">${lines.map((l, i) => html`<${Text} key=${i}>${l}<//>`)}<//>`;
-      })}
+      ${drawn.map(({ f, lines }) => html`<${Box} key=${f} flexDirection="column">${lines.map((l, i) => html`<${Text} key=${i}>${l}<//>`)}<//>`)}
     <//>`;
 }
 

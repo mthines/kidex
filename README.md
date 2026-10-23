@@ -42,6 +42,7 @@ node bin/kidex.mjs path/to/project
 | `1`–`4`, arrows, `ENTER` | pick a button |
 | `Y` / `N` | yes or no to the plan |
 | `T` | type instead of talking |
+| `L` | language: 🇩🇰 Dansk → 🇬🇧 English → 🌍 Auto (remembered on this computer, in `~/.kidex/settings.json`) |
 | `ESC` | back to the start |
 | `Q` | quit (on the start screen) |
 

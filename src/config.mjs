@@ -2,6 +2,7 @@
 // project without one still works (with only "look" commands allowed).
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const DEFAULT_ACTIONS = [
@@ -45,6 +46,20 @@ export function loadConfig(cwd) {
   };
   config.actions = config.actions.map((a, i) => ({ id: a.id ?? String(i), emoji: a.emoji ?? '⭐', ...a }));
   return config;
+}
+
+// Choices made inside Kidex (like the language), kept per computer, not per project.
+const SETTINGS = path.join(process.env.KIDEX_HOME ?? path.join(os.homedir(), '.kidex'), 'settings.json');
+
+export function loadSettings() {
+  try { return JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch { return {}; }
+}
+
+export function saveSettings(changes) {
+  const next = { ...loadSettings(), ...changes };
+  fs.mkdirSync(path.dirname(SETTINGS), { recursive: true });
+  fs.writeFileSync(SETTINGS, JSON.stringify(next, null, 2) + '\n');
+  return next;
 }
 
 /** A label can be a string or {da, en}. */
