@@ -66,7 +66,7 @@ const WORDS = {
   guidePlan: { en: '👉 Your turn! Is the plan good? 👍 or 👎', da: '👉 Din tur! Er planen god? 👍 eller 👎' },
   guideTalking: { en: '🔴 Talk now! Press SPACE when you are done', da: '🔴 Snak nu! Tryk MELLEMRUM når du er færdig' },
   guideHearing: { en: '👂 Wait a moment, I am writing down what you said…', da: '👂 Vent lidt, jeg skriver det ned, du sagde…' },
-  guideWorking: { en: '⏳ Kidex is building. Watch what happens!', da: '⏳ Kidex bygger. Kig med på hvad der sker!' },
+  guideWorking: { en: '⏳ Kidex is building. Want to add something? Press SPACE and talk', da: '⏳ Kidex bygger. Vil du tilføje noget? Tryk MELLEMRUM og snak' },
   guideQuiz: { en: '🤔 While you wait: pick an answer with the arrows and ENTER', da: '🤔 Mens du venter: vælg et svar med pilene og ENTER' },
   guideTyping: { en: '⌨️ Type, then press ENTER', da: '⌨️ Skriv, og tryk ENTER' },
   openIt: { en: 'open', da: 'åbn' },
@@ -361,8 +361,9 @@ export function App({ cwd, config, quiet = false }) {
 
     if (screen === 'chat') {
       if (prompt?.kind === 'done' && chosen != null && !busy && ear === 'idle') { pickDone(chosen); return; }
-      if (input === ' ' && !busy || input === ' ' && ear !== 'idle') { toggleMic(); return; }
-      if ((input === 't' || input === 'T') && !busy && ear === 'idle') { setTyping(''); return; }
+      // Also while Kidex builds: what the kid adds goes to Claude as it works.
+      if (input === ' ') { toggleMic(); return; }
+      if ((input === 't' || input === 'T') && ear === 'idle') { setTyping(''); return; }
       if (chosen != null && choices[chosen] && !busy && ear === 'idle') { submit(choices[chosen]); return; }
       if (prompt?.kind === 'plan' && (input === 'y' || input === 'j')) { submit(choices[0]); return; }
       if (prompt?.kind === 'plan' && input === 'n') { submit(choices[1]); return; }
@@ -428,7 +429,7 @@ export function App({ cwd, config, quiet = false }) {
     : expanded
     ? [['ESC', `🧱 ${w('backToKidex')}`]]
     : screen === 'chat'
-    ? [!busy && ear === 'idle' && choices.length > 0 && ['⏎', w('choose')], !busy && ear !== 'hearing' && ['␣', ear === 'recording' ? w('done') : w('talk')], !busy && ear === 'idle' && ['T', w('type')], strip && ['TAB', panel.title], ['ESC', w('back')]]
+    ? [!busy && ear === 'idle' && choices.length > 0 && ['⏎', w('choose')], ear !== 'hearing' && ['␣', ear === 'recording' ? w('done') : w('talk')], ear === 'idle' && ['T', w('type')], strip && ['TAB', panel.title], ['ESC', w('back')]]
     : toPanel
     ? [['ESC', `🧱 ${w('buttons')}`]]
     : [['⏎', w('choose')], (split || strip) && ['TAB', panel.title], ['L', `${flag.flag} ${flag.name}`], screen === 'home' ? ['Q', w('quit')] : ['ESC', w('back')]];

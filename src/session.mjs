@@ -38,6 +38,7 @@ export function createSession({ cwd, config, onEvent }) {
   const inbox = []; // things the kid said while Claude was not asking
   let wake = null;
   let closed = false;
+  let working = false; // Claude is in the middle of a turn
   let q = null;
 
   const emit = e => onEvent?.(e);
@@ -186,6 +187,7 @@ export function createSession({ cwd, config, onEvent }) {
   }
 
   function send(text) {
+    working = true;
     inbox.push(text);
     wake?.();
   }
@@ -210,6 +212,7 @@ export function createSession({ cwd, config, onEvent }) {
     try {
       for await (const m of q) {
         if (m.type === 'result') {
+          working = false;
           if (m.subtype === 'error_max_budget_usd') emit({ type: 'error', message: `Kidex used up its budget ($${config.budgetUsd}) for this time.` });
           else if (m.is_error) emit({ type: 'error', message: m.subtype === 'success' ? String(m.result ?? 'Something went wrong.') : m.subtype });
           emit({ type: 'turn', cost: m.total_cost_usd });
@@ -227,12 +230,14 @@ export function createSession({ cwd, config, onEvent }) {
       send(firstMessage({ action, pick, words, lang }));
       run();
     },
-    /** Something the kid said or picked. Goes to the waiting question, or starts a new turn. */
+    /** Something the kid said or picked. Goes to the waiting question, joins the turn Claude is working on, or starts a new turn. */
     answer(text) {
       if (waiting) {
         const w = waiting;
         waiting = null;
         w(text);
+      } else if (working) {
+        send(`While you work, the kid adds: "${text}". Fit it into what you are building, and tell_kid you heard it.`);
       } else {
         send(`The kid said: "${text}"`);
       }
