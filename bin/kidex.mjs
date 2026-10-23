@@ -79,8 +79,8 @@ function doctor() {
   if (better.length) {
     const names = { da: 'Dansk', en: 'English' };
     console.log(`\nBetter voices are free from Apple, but only through System Settings (no program can download them):
-  1. System Settings → Accessibility → Spoken Content
-  2. Next to "System voice", click the ⓘ (or "Manage Voices…")
+  1. System Settings → Accessibility → Read & Speak (called Spoken Content on older macOS)
+  2. Click the ⓘ to the right of "System voice"
   3. Find ${better.map(l => names[l] ?? l).join(' and ')}, and click ⬇ next to a voice marked Premium (best) or Enhanced
   4. When it has downloaded, Kidex uses it by itself. No need to change kidex.json.`);
   }

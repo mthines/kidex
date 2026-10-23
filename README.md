@@ -30,7 +30,7 @@ node bin/kidex.mjs doctor    # checks the mic, speech, and voices
 
 Kidex runs Claude through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk), which uses your Claude Code login or `ANTHROPIC_API_KEY`.
 
-Speech never leaves the machine: [whisper.cpp](https://github.com/ggml-org/whisper.cpp) turns talking into text, and macOS `say` talks back. Kidex uses the best voice installed for each language (Premium, then Enhanced, then basic). The better ones are free from Apple but can only be downloaded by hand: System Settings → Accessibility → Spoken Content → the ⓘ next to System voice → pick the language → ⬇ next to a Premium or Enhanced voice. `kidex doctor` says when a better one is available. The first time a kid talks, macOS asks whether the terminal may use the microphone.
+Speech never leaves the machine: [whisper.cpp](https://github.com/ggml-org/whisper.cpp) turns talking into text, and macOS `say` talks back. Kidex uses the best voice installed for each language (Premium, then Enhanced, then basic). The better ones are free from Apple but can only be downloaded by hand: System Settings → Accessibility → Read & Speak (Spoken Content on older macOS) → the ⓘ to the right of System voice → pick the language → ⬇ next to a Premium or Enhanced voice. `kidex doctor` says when a better one is available. The first time a kid talks, macOS asks whether the terminal may use the microphone.
 
 ## Use
 
