@@ -73,7 +73,7 @@ flowchart LR
 - **Waiting is part of the fun.** The plan is a checklist that ticks off ✅ 👉 ⬜ as it builds. Now and then Kidex asks a small quiz about what it's doing, and explains the answer.
 - **Bugs are puzzles, not failures.** Their work gets tested, with the project's own test. When the test robot finds a bug 🐛, the kid can guess why before Kidex fixes it 🔧. Errors say it's fine to try again; the scary details stay small, for grown-ups.
 - **A party when it's done.** Confetti, a "You made it!" banner with the thing's name, and a sound. Then: 🔍 how does it work?, 🔧 change something, or 🏠 done.
-- **Real projects, not a toy box.** Kidex works in your actual project: the one you already build with Claude Code. It was made for a family Minecraft server, where kids make their own mods and then play them on the server with everyone else. To start smaller, `examples/web-toys` lets them make little browser toys.
+- **Real projects, not a toy box.** Kidex works in your actual project: the one you already build with Claude Code. It was made for a family Minecraft server, where kids make their own mods and then play them on the server with everyone else: see [mthines/minecraft-mods](https://github.com/mthines/minecraft-mods), whose mods the kids made with Kidex. To start smaller, `examples/web-toys` lets them make little browser toys.
 
 ## Safe to hand over
 
@@ -164,7 +164,7 @@ The app goes in `~/Applications`. Making it again with the same name replaces it
 
 ## Hook up a project
 
-Put a `kidex.json` in the project's folder:
+Put a `kidex.json` in the project's folder. For a whole project set up this way, with a `./mc kidex` that installs Kidex the first time, see [minecraft-mods](https://github.com/mthines/minecraft-mods) and its [`kidex.json`](https://github.com/mthines/minecraft-mods/blob/main/kidex.json):
 
 ```jsonc
 {
