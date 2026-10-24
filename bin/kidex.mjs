@@ -3,6 +3,9 @@
 // kidex doctor              check the microphone, speech, and voices
 // kidex setup               download the speech model (~470 MB) and the Danish Piper voice
 // kidex setup voice [da en]  install Piper, an open-source voice that runs on this Mac (default: da)
+// kidex app [folder] [--name "Minecraft"] [--icon ⛏️] [--color "#5d9b3a"] [--icon-app "Minecraft Bedrock Launcher"] [--command "mc kidex"]
+//           [--terminal kitty|iTerm|Terminal] [--no-dock] [--no-desktop]
+//                           a Mac app on the Dock and the Desktop that opens Kidex on the folder
 // kidex run [folder] --say "make a cake" [--action new] [--pick name]
 //                           no screen: answers every question with the first
 //                           choice and says yes to the plan (for testing)
@@ -16,10 +19,11 @@ import { abilities, bestVoice, piperModel, MODEL, MODEL_URL, PIPER_PYTHON, PIPER
 const args = process.argv.slice(2);
 const flag = name => { const i = args.indexOf(`--${name}`); return i >= 0 ? args.splice(i, 2)[1] : undefined; };
 const bool = name => { const i = args.indexOf(`--${name}`); return i >= 0 ? (args.splice(i, 1), true) : false; };
-const cmd = ['doctor', 'setup', 'run'].includes(args[0]) ? args.shift() : 'open';
+const cmd = ['doctor', 'setup', 'app', 'run'].includes(args[0]) ? args.shift() : 'open';
 
 if (cmd === 'doctor') doctor();
 else if (cmd === 'setup') setup();
+else if (cmd === 'app') await app();
 else if (cmd === 'run') await headless();
 else await open();
 
@@ -60,6 +64,31 @@ async function headless() {
   await done;
   await session.stop();
   process.exit(ok ? 0 : 1);
+}
+
+async function app() {
+  const { makeApp, addToDock, addToDesktop, defaultTerminal } = await import('../src/launcher.mjs');
+  const opts = {
+    name: flag('name'), iconApp: flag('icon-app'), icon: flag('icon'), color: flag('color'), command: flag('command'), terminal: flag('terminal') ?? defaultTerminal(),
+    dock: !bool('no-dock'), desktop: !bool('no-desktop'),
+  };
+  if (process.platform !== 'darwin') { console.error('kidex app makes a Mac app, so it only works on a Mac.'); process.exit(1); }
+  const cwd = path.resolve(args[0] ?? '.');
+  if (!fs.statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) { console.error(`❌ There's no folder at ${cwd}`); process.exit(1); }
+  const name = opts.name ?? loadConfig(cwd).name; // the app is called "<name> (Kidex)"
+  // Without a global kidex (npm install -g), the app runs this copy of Kidex.
+  const command = opts.command ?? (spawnSync('sh', ['-lc', 'command -v kidex']).status === 0
+    ? 'kidex .' : `node '${path.join(import.meta.dirname, 'kidex.mjs')}' .`);
+  try {
+    const made = makeApp({ cwd, name, command, terminal: opts.terminal, icon: opts.icon, color: opts.color, iconApp: opts.iconApp });
+    console.log(`✅ ${made}`);
+    if (opts.dock) console.log(addToDock(made) ? '✅ On the Dock' : 'Already on the Dock');
+    if (opts.desktop) console.log(addToDesktop(made) ? '✅ On the Desktop' : 'Already on the Desktop');
+    console.log(`Clicking it opens ${opts.terminal} in ${cwd} and runs: ${command}`);
+  } catch (e) {
+    console.error(`❌ ${e.message}`);
+    process.exit(1);
+  }
 }
 
 function doctor() {

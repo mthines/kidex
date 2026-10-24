@@ -135,6 +135,33 @@ node bin/kidex.mjs path/to/project
 
 To try it without a project, use `examples/web-toys`: kids make small browser toys there.
 
+### One click from the Dock
+
+Kids shouldn't need a terminal to start Kidex. `kidex app` makes a Mac app for a project and puts it on the Dock and the Desktop: a click opens a terminal and starts Kidex there. Make one per project; each gets its own name and icon, and its name ends in "(Kidex)", so it's never mixed up with the game itself.
+
+<p align="center">
+  <img src="docs/images/dock-apps.png" alt="Two Kidex Dock icons: the Minecraft block on a dark tile with KIDEX under it, and a speech bubble with a paint palette" width="280">
+</p>
+
+```bash
+# The game's own icon with KIDEX under it (left)
+node bin/kidex.mjs app path/to/minecraft-mods --name Minecraft --icon-app "Minecraft Bedrock Launcher"
+# A speech bubble with an emoji (right)
+node bin/kidex.mjs app examples/web-toys --name "Web toys" --icon 🎨
+```
+
+| Flag | |
+| --- | --- |
+| `--name` | the app's name, shown as `<name> (Kidex)` (default: `name` in `kidex.json`, or the folder's name) |
+| `--icon-app` | use another app's icon, like the game the project is for, with KIDEX under it: its name in `/Applications` or its path |
+| `--icon` | without `--icon-app`: a letter or an emoji in the speech bubble (default: the name's first letter) |
+| `--color` | the speech bubble's color, or KIDEX's with `--icon-app` (default: one picked from the name; orange) |
+| `--command` | what to run in the folder instead of `kidex .`, like `"mc kidex"` |
+| `--terminal` | `kitty`, `iTerm`, or `Terminal` (default: the first one installed, in that order) |
+| `--no-dock`, `--no-desktop` | leave it off the Dock or the Desktop |
+
+The app goes in `~/Applications`. Making it again with the same name replaces it in place, and the Dock and Desktop pick up the new icon. When Kidex quits, the terminal window closes; if Kidex fails, the window stays open to show why. Drawing the icon needs the Xcode Command Line Tools (`xcode-select --install`). The terminal the app opens is the one macOS asks about the microphone.
+
 ## Hook up a project
 
 Put a `kidex.json` in the project's folder:
@@ -202,3 +229,4 @@ It prints one JSON event per line and exits 0 if Claude finished with `all_done`
 | `src/pictures.mjs` | draws the PNGs Claude made, right in the terminal |
 | `src/panel.mjs` | runs a `panel` button's program in a pseudo-terminal ([node-pty](https://github.com/microsoft/node-pty)) and draws its screen ([xterm.js](https://github.com/xtermjs/xterm.js) headless) |
 | `src/prompt.mjs` | how Claude should talk to kids |
+| `src/launcher.mjs` | `kidex app`: builds the Mac app (AppleScript via `osacompile`), draws its icon (AppKit, via `swift`), and puts it on the Dock and the Desktop |
