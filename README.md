@@ -44,7 +44,7 @@ Every picture here is from one real session in [`examples/web-toys`](examples/we
   </tr>
 </table>
 
-And here's what came out, [ready to open in a browser](examples/web-toys/toys/cat-piano/index.html):
+And here's what came out, [view code](examples/web-toys/toys/cat-piano/index.html) | [view in a browser](https://mthines.github.io/kidex/examples/web-toys/toys/cat-piano/index.html):
 
 <p align="center">
   <img src="docs/images/cat-piano.png" alt="Cat Piano: five cats from big to tiny sitting on piano keys numbered 1 to 5" width="80%">
