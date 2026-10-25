@@ -23,6 +23,7 @@ export const DEFAULTS = {
   allow: [],
   deny: [],
   actions: DEFAULT_ACTIONS,
+  start: null, // the id of the button selected when the start screen opens; null: the first
   git: { branch: null, commit: false },
 };
 

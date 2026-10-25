@@ -11,6 +11,7 @@ import { abilities, startRecording, transcribe, speak, hush, guessLang, warmUp, 
 import { render as renderPicture } from './pictures.mjs';
 import { describe, peek } from './files.mjs';
 import { openPanel, resizePanel, pressKey, escapePanel, usePanel, TerminalView } from './panel.mjs';
+import { usePresses, PressArea, Press } from './mouse.mjs';
 
 const html = htm.bind(React.createElement);
 
@@ -106,8 +107,10 @@ export function App({ cwd, config, quiet = false }) {
     if (!quiet) speak(label(next.say, now), { lang: now, voices: config.voices });
   }
 
+  // The button selected on the start screen: kidex.json's "start" names one by id, otherwise the first.
+  const first = Math.max(0, config.actions.findIndex(a => a.id === config.start));
   const [screen, setScreen] = useState('home');
-  const [sel, setSel] = useState(0);
+  const [sel, setSel] = useState(first);
   const [action, setAction] = useState(null);
   const [picks, setPicks] = useState([]);
   const [pick, setPick] = useState(null);
@@ -218,7 +221,7 @@ export function App({ cwd, config, quiet = false }) {
       // A plain command, no Claude: like opening a toy to play with it.
       spawn(fill(a.run, { pick: p }), { cwd, shell: true, stdio: 'ignore', detached: true }).unref();
       voice(w('fun'));
-      setScreen('home'); setSel(0);
+      setScreen('home'); setSel(first);
       return;
     }
     if (a.panel) {
@@ -287,7 +290,7 @@ export function App({ cwd, config, quiet = false }) {
     recording.current?.cancel?.(); setEar('idle');
     await session.current?.stop();
     session.current = null;
-    setScreen('home'); setSel(0); setPrompt(null); setBusy(false); setActivity(null); setOnPanel(false); setBig(false);
+    setScreen('home'); setSel(first); setPrompt(null); setBusy(false); setActivity(null); setOnPanel(false); setBig(false);
   }
 
   const choices = screen === 'home' ? config.actions.map(a => `${a.emoji} ${label(a.label, lang)}`)
@@ -314,6 +317,25 @@ export function App({ cwd, config, quiet = false }) {
   const showPanel = screen === 'chat' && room >= 100 && Object.keys(files).length + (now ? 1 : 0) > 0;
   const mainWidth = room - (showPanel ? PANEL : 0);
 
+  /** ENTER, a number, or a press on button i. */
+  function choose(i) {
+    if (screen === 'home') {
+      const a = config.actions[i];
+      if (a.pick) {
+        const list = pickChoices(cwd, a.pick);
+        setAction(a); setPicks(list); setSel(0); setScreen('pick'); voice(w('pick'));
+      } else begin(a, null);
+    } else if (screen === 'pick') {
+      if (picks[i]) begin(action, picks[i]);
+    } else if (!busy && ear === 'idle') {
+      if (prompt?.kind === 'done') pickDone(i);
+      else if (choices[i]) submit(choices[i]);
+    }
+  }
+
+  const leavePanel = () => { setOnPanel(false); setBig(false); };
+  const presses = usePresses(typing === null);
+
   useInput((input, key) => {
     if (typing !== null) {
       if (key.return) { const t = typing; setTyping(null); submit(t); }
@@ -322,10 +344,16 @@ export function App({ cwd, config, quiet = false }) {
       else if (input && !key.ctrl && !key.meta) setTyping(t => t + input);
       return;
     }
-    if (toPanel) { if (key.escape) escapePanel(() => { setOnPanel(false); setBig(false); }); else pressKey(input, key); return; }
+    if (toPanel) {
+      // SHIFT+TAB leaves at once; ESC may close the program's own menu first.
+      if (key.tab && key.shift) leavePanel();
+      else if (key.escape) escapePanel(leavePanel);
+      else pressKey(input, key);
+      return;
+    }
     if (expanded) { if (key.escape || key.tab) setBig(false); return; } // the program has stopped
-    if (split && key.tab) { setOnPanel(true); return; }
-    if (strip && key.tab) { setBig(true); return; }
+    if (split && key.tab && !key.shift) { setOnPanel(true); return; }
+    if (strip && key.tab && !key.shift) { setBig(true); return; }
     if (key.escape) { if (screen !== 'home') home(); return; }
     if ((input === 'l' || input === 'L') && ear === 'idle') { nextLanguage(); return; }
     if (screen === 'home' && input === 'q') { exit(); return; }
@@ -340,15 +368,7 @@ export function App({ cwd, config, quiet = false }) {
     const digit = Number(input);
     const chosen = key.return ? sel : digit >= 1 && digit <= n ? digit - 1 : null;
 
-    if (screen === 'home' && chosen != null) {
-      const a = config.actions[chosen];
-      if (a.pick) {
-        const list = pickChoices(cwd, a.pick);
-        setAction(a); setPicks(list); setSel(0); setScreen('pick'); voice(w('pick'));
-      } else begin(a, null);
-      return;
-    }
-    if (screen === 'pick' && chosen != null && picks[chosen]) { begin(action, picks[chosen]); return; }
+    if (screen !== 'chat' && chosen != null) { choose(chosen); return; }
 
     if (screen === 'chat' && busy && quiz && quiz.picked === null && ear === 'idle') {
       const m = quiz.choices.length;
@@ -360,11 +380,10 @@ export function App({ cwd, config, quiet = false }) {
     }
 
     if (screen === 'chat') {
-      if (prompt?.kind === 'done' && chosen != null && !busy && ear === 'idle') { pickDone(chosen); return; }
+      if (chosen != null && !busy && ear === 'idle') { choose(chosen); return; }
       // Also while Kidex builds: what the kid adds goes to Claude as it works.
       if (input === ' ') { toggleMic(); return; }
       if ((input === 't' || input === 'T') && ear === 'idle') { setTyping(''); return; }
-      if (chosen != null && choices[chosen] && !busy && ear === 'idle') { submit(choices[chosen]); return; }
       if (prompt?.kind === 'plan' && (input === 'y' || input === 'j')) { submit(choices[0]); return; }
       if (prompt?.kind === 'plan' && input === 'n') { submit(choices[1]); return; }
     }
@@ -377,15 +396,16 @@ export function App({ cwd, config, quiet = false }) {
 
   let middle;
   if (split) {
-    middle = html`<${Column} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${toPanel ? -1 : sel} />`;
+    middle = html`<${Column} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${toPanel ? -1 : sel}
+      onPress=${i => { if (toPanel) { leavePanel(); setSel(i); } else choose(i); }} />`;
   } else if (screen === 'home') {
     middle = html`<${Box} flexDirection="column" alignItems="center">
       <${Title}>${w('hello')}<//>
-      <${Tiles} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${sel} columns=${mainWidth} /><//>`;
+      <${Tiles} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${sel} columns=${mainWidth} onPress=${choose} /><//>`;
   } else if (screen === 'pick') {
     middle = html`<${Box} flexDirection="column" alignItems="center">
       <${Title}>${w('pick')}<//>
-      <${Tiles} items=${picks.map(p => ({ emoji: '🧩', text: nice(p) }))} sel=${sel} columns=${mainWidth} small /><//>`;
+      <${Tiles} items=${picks.map(p => ({ emoji: '🧩', text: nice(p) }))} sel=${sel} columns=${mainWidth} small onPress=${choose} /><//>`;
   } else {
     const shown = prompt?.kind === 'done' ? prompt.pictures : drawn;
     const checklist = steps.length > 0 && stepAt >= 0;
@@ -396,11 +416,11 @@ export function App({ cwd, config, quiet = false }) {
       <${Pictures} files=${shown} />
       ${busy && html`<${Working} tick=${tick} activity=${activity} label=${w('working')} />`}
       ${checklist && (busy || prompt?.kind === 'done') && html`<${Checklist} steps=${steps} at=${stepAt} tick=${tick} short=${busy && quiz !== null} />`}
-      ${busy && quiz && html`<${Quiz} quiz=${quiz} title=${w('whileYouWait')} words=${w} width=${Math.min(72, mainWidth - 8)} />`}
-      ${myTurn && html`<${Mic} tick=${tick} />`}
-      ${!busy && ear === 'idle' && typing === null && choices.length > 0 && html`<${Tiles} items=${choices.map(splitEmoji)} sel=${sel} columns=${mainWidth} />`}
+      ${busy && quiz && html`<${Quiz} quiz=${quiz} title=${w('whileYouWait')} words=${w} width=${Math.min(72, mainWidth - 8)} onPress=${ear === 'idle' ? answerQuiz : null} />`}
+      ${myTurn && html`<${Mic} tick=${tick} onPress=${toggleMic} />`}
+      ${!busy && ear === 'idle' && typing === null && choices.length > 0 && html`<${Tiles} items=${choices.map(splitEmoji)} sel=${sel} columns=${mainWidth} onPress=${choose} />`}
       ${ear === 'recording' && html`
-        <${Box} borderStyle="bold" borderColor="red" paddingX=${4} paddingY=${1} marginTop=${1} flexDirection="column" alignItems="center">
+        <${Press} on=${toggleMic} borderStyle="bold" borderColor="red" paddingX=${4} paddingY=${1} marginTop=${1} flexDirection="column" alignItems="center">
           <${Text} color="red" bold>${tick % 2 ? '🔴' : '⭕'}  ${w('listening')}<//>
           <${Meter} level=${level} />
           <${Text} color="gray">${w('stopTalk')}<//>
@@ -436,6 +456,7 @@ export function App({ cwd, config, quiet = false }) {
   const shownGuide = toPanel || expanded ? null : guide;
 
   return html`
+    <${PressArea} presses=${presses}>
     <${Box} width=${columns} height=${rows} flexDirection="column">
       <${Box} justifyContent="space-between" paddingX=${1}>
         <${Text} color="gray">🧱 Kidex · ${config.name}<//>
@@ -444,20 +465,24 @@ export function App({ cwd, config, quiet = false }) {
       <${Box} flexGrow=${1}>
         ${showPanel && !expanded && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
         ${expanded ? html`
-          <${Box} width=${COLUMN} flexDirection="column" alignItems="center" justifyContent="center">
+          <${Press} on=${leavePanel} width=${COLUMN} flexDirection="column" alignItems="center" justifyContent="center">
             <${KidexCard} text=${screen === 'pick' ? w('pick') : lastKidex?.text} status=${guide} color=${guideColor} tick=${tick} busy=${busy} />
           <//>` : html`
-          <${Box} flexGrow=${split ? 0 : 1} width=${split ? COLUMN : undefined} flexDirection="column" alignItems="center" justifyContent="center">
+          <${Press} on=${toPanel ? leavePanel : null} flexGrow=${split ? 0 : 1} width=${split ? COLUMN : undefined} flexDirection="column" alignItems="center" justifyContent="center">
             ${middle}
           <//>`}
-        ${(split || expanded) && html`<${TerminalView} panel=${panel} focused=${toPanel} width=${columns - COLUMN} height=${rows - 3} note=${panel.code !== null && w('stopped')} />`}
-        ${beside && html`<${PanelStrip} panel=${panel} width=${side} height=${rows - 3} open=${w('openIt')} stopped=${w('stopped')} />`}
+        ${(split || expanded) && html`
+          <${Press} on=${split && panel.code === null ? () => setOnPanel(true) : null}>
+            <${TerminalView} panel=${panel} focused=${toPanel} width=${columns - COLUMN} height=${rows - 3} note=${panel.code !== null && w('stopped')} />
+          <//>`}
+        ${beside && html`<${Press} on=${() => setBig(true)}><${PanelStrip} panel=${panel} width=${side} height=${rows - 3} open=${w('openIt')} stopped=${w('stopped')} /><//>`}
       <//>
       ${shownGuide && html`<${Box} justifyContent="center"><${Text} bold color=${guideColor}>${shownGuide}<//><//>`}
       <${Box} justifyContent="center" gap=${3}>
         ${hints.filter(Boolean).map(([k, v]) => html`<${Text} key=${k} color="gray"><${Text} inverse bold> ${k} <//> ${v}<//>`)}
       <//>
       ${party && html`<${Confetti} big=${party.big} name=${party.name} title=${w('madeIt')} tick=${tick} columns=${columns} rows=${rows} />`}
+    <//>
     <//>`;
 }
 
@@ -481,7 +506,7 @@ function perRowFor(n, columns, small) {
   return perRow;
 }
 
-function Tiles({ items, sel, columns, small }) {
+function Tiles({ items, sel, columns, small, onPress }) {
   const n = items.length;
   const perRow = perRowFor(n, columns, small);
   const width = Math.min(small ? 24 : 34, Math.floor((columns - 4) / perRow) - 2);
@@ -495,7 +520,7 @@ function Tiles({ items, sel, columns, small }) {
             const on = i === sel;
             const color = COLORS[i % COLORS.length];
             return html`
-              <${Box} key=${i} width=${width} height=${small ? 5 : 7} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'whiteBright' : color}
+              <${Press} key=${i} on=${onPress && (() => onPress(i))} width=${width} height=${small ? 5 : 7} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'whiteBright' : color}
                 backgroundColor=${on ? color : undefined} flexDirection="column" alignItems="center" justifyContent="center" paddingX=${1}>
                 ${emoji && html`<${Text}>${emoji}<//>`}
                 <${Text} bold color=${on ? 'black' : color} wrap="wrap">${text}<//>
@@ -537,14 +562,14 @@ function KidexCard({ text, status, color, tick, busy }) {
 }
 
 /** The buttons as one short column, beside a panel program. sel -1: none chosen, the keys go to the program. */
-function Column({ items, sel }) {
+function Column({ items, sel, onPress }) {
   return html`
     <${Box} flexDirection="column" alignItems="center">
       ${items.map(({ emoji, text }, i) => {
         const on = i === sel;
         const color = COLORS[i % COLORS.length];
         return html`
-          <${Box} key=${i} width=${COLUMN - 2} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'whiteBright' : sel < 0 ? 'gray' : color}
+          <${Press} key=${i} on=${() => onPress(i)} width=${COLUMN - 2} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'whiteBright' : sel < 0 ? 'gray' : color}
             backgroundColor=${on ? color : undefined} paddingX=${1}>
             <${Text} bold color=${on ? 'black' : sel < 0 ? 'gray' : color} wrap="truncate-end">${emoji} ${text}<//>
           <//>`;
@@ -589,7 +614,7 @@ function Checklist({ steps, at, tick = 0, title, short }) {
 }
 
 /** A small question while Kidex works. After an answer: right or not, and why. */
-function Quiz({ quiz, title, words, width }) {
+function Quiz({ quiz, title, words, width, onPress }) {
   const answered = quiz.picked !== null;
   const right = quiz.picked === quiz.answer;
   return html`
@@ -601,7 +626,9 @@ function Quiz({ quiz, title, words, width }) {
           const on = !answered && i === quiz.sel;
           const mark = answered ? (i === quiz.answer ? '✅' : i === quiz.picked ? '❌' : '  ') : on ? '▶ ' : '  ';
           const color = answered ? (i === quiz.answer ? 'green' : i === quiz.picked ? 'red' : 'gray') : on ? 'black' : 'cyan';
-          return html`<${Text} key=${i} bold=${on || (answered && i === quiz.answer)} color=${color} backgroundColor=${on ? 'cyan' : undefined}>${mark} ${i + 1}. ${c} <//>`;
+          return html`<${Press} key=${i} on=${!answered && onPress && (() => onPress(i))}>
+            <${Text} bold=${on || (answered && i === quiz.answer)} color=${color} backgroundColor=${on ? 'cyan' : undefined}>${mark} ${i + 1}. ${c} <//>
+          <//>`;
         })}
       <//>
       ${answered && html`<${Box} marginTop=${1}><${Text} color=${right ? 'greenBright' : 'yellow'} wrap="wrap">${right ? '🎉' : '💡'} ${words(right ? 'correct' : 'notQuite')} ${quiz.explain}<//><//>`}
@@ -609,10 +636,10 @@ function Quiz({ quiz, title, words, width }) {
 }
 
 /** A big mic that gently pulses while Kidex waits for the kid to talk. */
-function Mic({ tick }) {
+function Mic({ tick, onPress }) {
   const on = tick % 4 < 2;
   return html`
-    <${Box} marginTop=${1} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'greenBright' : 'green'} paddingX=${2}>
+    <${Press} on=${onPress} marginTop=${1} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'greenBright' : 'green'} paddingX=${2}>
       <${Text} bold color=${on ? 'greenBright' : 'green'}>🎤 ${on ? '·))' : '·) '}<//>
     <//>`;
 }

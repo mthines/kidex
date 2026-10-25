@@ -180,6 +180,7 @@ Put a `kidex.json` in the project's folder. For a whole project set up this way,
   "voices": { "da": "piper:da_DK-talesyntese-medium", "en": "Samantha" },  // optional: a Piper voice or a macOS voice per language
   "git": { "branch": "kidex/{date}", "commit": true },  // optional: work on a branch, commit at the end
   "explain": { "kit.json": { "en": "What you get to try the mod", "da": "Det du får, når du prøver modet" } },
+  "start": "server",                 // optional: the button selected when Kidex opens (default: the first)
   "actions": [
     { "id": "new", "emoji": "✨", "label": { "en": "Make a mod", "da": "Lav et mod" }, "prompt": "Make a new mod." },
     { "id": "change", "emoji": "🔧", "label": "Change a mod", "pick": "addons/*", "prompt": "Change the mod in addons/{pick}." },

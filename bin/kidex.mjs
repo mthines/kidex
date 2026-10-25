@@ -34,7 +34,12 @@ async function open() {
   const { render } = await import('ink');
   const React = (await import('react')).default;
   const { App } = await import('../src/ui.mjs');
+  const { MOUSE_ON, MOUSE_OFF, watchMouse } = await import('../src/mouse.mjs');
+  watchMouse(process.stdin);
   const app = render(React.createElement(App, { cwd, config, quiet }), { exitOnCtrlC: true, alternateScreen: true });
+  // Kids can press buttons with the mouse; the terminal stops reporting it when Kidex ends.
+  process.stdout.write(MOUSE_ON);
+  process.on('exit', () => process.stdout.write(MOUSE_OFF));
   await app.waitUntilExit();
   process.exit(0);
 }
