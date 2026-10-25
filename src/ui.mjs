@@ -226,7 +226,7 @@ export function App({ cwd, config, quiet = false }) {
     }
     if (a.panel) {
       // A program that keeps running, like a dev screen: it fills the screen, the buttons move to the left.
-      openPanel(fill(a.panel, { pick: p }), { cwd, title: `${a.emoji} ${label(a.label, lang)}`, cols: columns - COLUMN - 2, rows: rows - 5 });
+      openPanel(fill(a.panel, { pick: p }), { cwd, title: `${a.emoji} ${label(a.label, lang)}`, cols: panelWidth - 2, rows: panelHeight - 2 });
       setScreen('home'); setSel(config.actions.indexOf(a)); setOnPanel(true);
       return;
     }
@@ -300,22 +300,31 @@ export function App({ cwd, config, quiet = false }) {
   // With a panel program running, the start screen is that program, with the buttons in a column on the left.
   // Elsewhere it keeps running on the right, narrower, and TAB makes it big again (with Kidex as a card on the left).
   const panel = usePanel();
+  // Narrow, tall screens put the parts above each other instead of side by side.
+  const stacked = columns < NARROW && rows >= 30;
   const split = screen === 'home' && panel !== null;
-  const strip = screen !== 'home' && panel !== null && columns >= 80;
+  const strip = screen !== 'home' && panel !== null && (stacked || columns >= 80);
   const expanded = strip && big;
   const toPanel = (split && onPanel || expanded) && panel.code === null;
-  const side = Math.min(90, Math.max(STRIP, Math.floor(columns * 0.4)));
-  // The program's terminal takes the size of where it is shown, so it lays itself out for it.
   const beside = strip && !expanded;
+  const buttons = config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }));
+  const row = rowOf(buttons, columns);
+  // Where the program is shown: right of the buttons or the Kidex card, or under them when stacked.
+  const panelWidth = stacked ? columns : columns - COLUMN;
+  const panelHeight = rows - 3 - (!stacked ? 0 : screen === 'home' ? row.height : CARD);
+  // While building it runs in a strip: on the right, or along the bottom when stacked.
+  const stripWidth = stacked ? columns : Math.min(90, Math.max(STRIP, Math.floor(columns * 0.4)));
+  const stripHeight = stacked ? Math.max(8, Math.floor((rows - 3) * 0.4)) : rows - 3;
+  // The program's terminal takes the size of where it is shown, so it lays itself out for it.
   useEffect(() => {
-    if (beside) resizePanel(side - 2, rows - 3 - STRIP_CHROME);
-    else resizePanel(columns - COLUMN - 2, rows - 5);
-  }, [columns, rows, beside]);
+    if (beside) resizePanel(stripWidth - 2, stripHeight - STRIP_CHROME);
+    else resizePanel(panelWidth - 2, panelHeight - 2);
+  }, [beside, stripWidth, stripHeight, panelWidth, panelHeight]);
 
-  // While building, wide screens show what happens to the files on the left.
-  const room = columns - (strip ? side : 0);
-  const showPanel = screen === 'chat' && room >= 100 && Object.keys(files).length + (now ? 1 : 0) > 0;
-  const mainWidth = room - (showPanel ? PANEL : 0);
+  // While building, wide screens show what happens to the files on the left; tall ones under Kidex.
+  const room = columns - (strip && !stacked ? stripWidth : 0);
+  const showPanel = screen === 'chat' && (stacked ? rows >= 45 : room >= 100) && Object.keys(files).length + (now ? 1 : 0) > 0;
+  const mainWidth = room - (showPanel && !stacked ? PANEL : 0);
 
   /** ENTER, a number, or a press on button i. */
   function choose(i) {
@@ -360,11 +369,11 @@ export function App({ cwd, config, quiet = false }) {
 
     const n = choices.length;
     // Tiles sit in a grid: left/right move one, up/down a whole row.
-    const row = split ? 1 : perRowFor(n, mainWidth, screen === 'pick');
+    const step = split ? (stacked ? row.across : 1) : perRowFor(n, mainWidth, screen === 'pick');
     if (n && key.rightArrow) { setSel(s => (s + 1) % n); return; }
     if (n && key.leftArrow) { setSel(s => (s - 1 + n) % n); return; }
-    if (n && key.downArrow) { setSel(s => (s + row < n ? s + row : s % row)); return; }
-    if (n && key.upArrow) { setSel(s => (s - row >= 0 ? s - row : Math.min(n - 1, s + row * Math.floor((n - 1 - s) / row)))); return; }
+    if (n && key.downArrow) { setSel(s => (s + step < n ? s + step : s % step)); return; }
+    if (n && key.upArrow) { setSel(s => (s - step >= 0 ? s - step : Math.min(n - 1, s + step * Math.floor((n - 1 - s) / step)))); return; }
     const digit = Number(input);
     const chosen = key.return ? sel : digit >= 1 && digit <= n ? digit - 1 : null;
 
@@ -396,12 +405,12 @@ export function App({ cwd, config, quiet = false }) {
 
   let middle;
   if (split) {
-    middle = html`<${Column} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${toPanel ? -1 : sel}
+    middle = html`<${Column} items=${buttons} sel=${toPanel ? -1 : sel} row=${stacked ? row : null}
       onPress=${i => { if (toPanel) { leavePanel(); setSel(i); } else choose(i); }} />`;
   } else if (screen === 'home') {
     middle = html`<${Box} flexDirection="column" alignItems="center">
       <${Title}>${w('hello')}<//>
-      <${Tiles} items=${config.actions.map(a => ({ emoji: a.emoji, text: label(a.label, lang) }))} sel=${sel} columns=${mainWidth} onPress=${choose} /><//>`;
+      <${Tiles} items=${buttons} sel=${sel} columns=${mainWidth} onPress=${choose} /><//>`;
   } else if (screen === 'pick') {
     middle = html`<${Box} flexDirection="column" alignItems="center">
       <${Title}>${w('pick')}<//>
@@ -462,20 +471,21 @@ export function App({ cwd, config, quiet = false }) {
         <${Text} color="gray">🧱 Kidex · ${config.name}<//>
         <${Text} color="gray">${cost > 0 ? `$${cost.toFixed(2)}` : ''}<//>
       <//>
-      <${Box} flexGrow=${1}>
-        ${showPanel && !expanded && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
+      <${Box} flexGrow=${1} flexDirection=${stacked ? 'column' : 'row'}>
+        ${showPanel && !expanded && !stacked && html`<${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} />`}
         ${expanded ? html`
-          <${Press} on=${leavePanel} width=${COLUMN} flexDirection="column" alignItems="center" justifyContent="center">
-            <${KidexCard} text=${screen === 'pick' ? w('pick') : lastKidex?.text} status=${guide} color=${guideColor} tick=${tick} busy=${busy} />
+          <${Press} on=${leavePanel} width=${stacked ? undefined : COLUMN} height=${stacked ? CARD : undefined} flexShrink=${0} flexDirection="column" alignItems="center" justifyContent="center">
+            <${KidexCard} text=${screen === 'pick' ? w('pick') : lastKidex?.text} status=${guide} color=${guideColor} tick=${tick} busy=${busy} width=${stacked ? columns - 2 : COLUMN - 2} />
           <//>` : html`
-          <${Press} on=${toPanel ? leavePanel : null} flexGrow=${split ? 0 : 1} width=${split ? COLUMN : undefined} flexDirection="column" alignItems="center" justifyContent="center">
+          <${Press} on=${toPanel ? leavePanel : null} flexGrow=${split ? 0 : 1} flexShrink=${split ? 0 : 1} width=${split && !stacked ? COLUMN : undefined} flexDirection="column" alignItems="center" justifyContent="center">
             ${middle}
           <//>`}
+        ${showPanel && !expanded && stacked && html`<${Box} height=${FILES_ROWS} flexShrink=${0} overflow="hidden"><${FilesPanel} files=${files} now=${busy ? now : null} lang=${lang} explain=${config.explain} words=${w} width=${columns} /><//>`}
         ${(split || expanded) && html`
-          <${Press} on=${split && panel.code === null ? () => setOnPanel(true) : null}>
-            <${TerminalView} panel=${panel} focused=${toPanel} width=${columns - COLUMN} height=${rows - 3} note=${panel.code !== null && w('stopped')} />
+          <${Press} on=${split && panel.code === null ? () => setOnPanel(true) : null} flexShrink=${0}>
+            <${TerminalView} panel=${panel} focused=${toPanel} width=${panelWidth} height=${panelHeight} note=${panel.code !== null && w('stopped')} />
           <//>`}
-        ${beside && html`<${Press} on=${() => setBig(true)}><${PanelStrip} panel=${panel} width=${side} height=${rows - 3} open=${w('openIt')} stopped=${w('stopped')} /><//>`}
+        ${beside && html`<${Press} on=${() => setBig(true)} flexShrink=${0}><${PanelStrip} panel=${panel} width=${stripWidth} height=${stripHeight} open=${w('openIt')} stopped=${w('stopped')} /><//>`}
       <//>
       ${shownGuide && html`<${Box} justifyContent="center"><${Text} bold color=${guideColor}>${shownGuide}<//><//>`}
       <${Box} justifyContent="center" gap=${3}>
@@ -532,6 +542,16 @@ function Tiles({ items, sel, columns, small, onPress }) {
 
 const COLUMN = 28;
 const STRIP = 30;
+const NARROW = 90; // narrower than this, and tall enough, the parts stack
+const CARD = 8; // the Kidex card's rows above a big program, when stacked
+const FILES_ROWS = 12; // the files panel's rows under Kidex, when stacked
+
+/** The buttons in rows across the screen, above a panel program: each as wide as the longest. */
+function rowOf(items, columns) {
+  const width = Math.min(COLUMN - 2, Math.max(...items.map(i => i.text.length)) + 7); // emoji, space, border, padding
+  const across = Math.max(1, Math.floor(columns / width));
+  return { width, across, height: Math.ceil(items.length / across) * 3 };
+}
 
 /**
  * The panel program on the right while kids build: its whole screen, laid out for this width
@@ -552,24 +572,27 @@ function PanelStrip({ panel, width, height, open, stopped }) {
 const STRIP_CHROME = 4; // the strip's border, title and TAB line
 
 /** Kidex, small, while the panel program is big: what Kidex said last, and whose turn it is. */
-function KidexCard({ text, status, color, tick, busy }) {
+function KidexCard({ text, status, color, tick, busy, width }) {
   return html`
-    <${Box} width=${COLUMN - 2} flexDirection="column" borderStyle="round" borderColor=${color} paddingX=${1}>
+    <${Box} width=${width} flexDirection="column" borderStyle="round" borderColor=${color} paddingX=${1}>
       <${Text} bold>🧱 Kidex ${busy ? ['⛏️ ', ' ⛏️'][tick % 2] : ''}<//>
       ${text && html`<${Text} color="whiteBright" wrap="wrap">${text.length > 140 ? text.slice(0, 139) + '…' : text}<//>`}
       ${status && html`<${Box} marginTop=${1}><${Text} color=${color} wrap="wrap">${status}<//><//>`}
     <//>`;
 }
 
-/** The buttons as one short column, beside a panel program. sel -1: none chosen, the keys go to the program. */
-function Column({ items, sel, onPress }) {
+/**
+ * The buttons as one short column beside a panel program, or in rows above it (row from rowOf).
+ * sel -1: none chosen, the keys go to the program.
+ */
+function Column({ items, sel, row, onPress }) {
   return html`
-    <${Box} flexDirection="column" alignItems="center">
+    <${Box} flexDirection=${row ? 'row' : 'column'} flexWrap=${row ? 'wrap' : 'nowrap'} justifyContent="center" alignItems="center">
       ${items.map(({ emoji, text }, i) => {
         const on = i === sel;
         const color = COLORS[i % COLORS.length];
         return html`
-          <${Press} key=${i} on=${() => onPress(i)} width=${COLUMN - 2} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'whiteBright' : sel < 0 ? 'gray' : color}
+          <${Press} key=${i} on=${() => onPress(i)} width=${row ? row.width : COLUMN - 2} borderStyle=${on ? 'bold' : 'round'} borderColor=${on ? 'whiteBright' : sel < 0 ? 'gray' : color}
             backgroundColor=${on ? color : undefined} paddingX=${1}>
             <${Text} bold color=${on ? 'black' : sel < 0 ? 'gray' : color} wrap="truncate-end">${emoji} ${text}<//>
           <//>`;
@@ -724,7 +747,7 @@ const PANEL = 42;
  * The files panel: a little tree of what Claude made (✨) or changed (🔨),
  * and, for the file it is working on now, what kind of file it is and a peek inside.
  */
-function FilesPanel({ files, now, lang, explain, words }) {
+function FilesPanel({ files, now, lang, explain, words, width = PANEL }) {
   const list = Object.entries(files).sort((a, b) => a[0].localeCompare(b[0])).slice(-14);
   const byDir = {};
   for (const [file, info] of list) {
@@ -733,9 +756,9 @@ function FilesPanel({ files, now, lang, explain, words }) {
   }
   const short = d => d === '.' ? '' : d.split('/').slice(-2).join('/') + '/';
   const about = now && describe(now.file, lang, explain);
-  const code = now && now.action !== 'read' && now.action !== 'draw' ? peek(now.content, { width: PANEL - 6 }) : [];
+  const code = now && now.action !== 'read' && now.action !== 'draw' ? peek(now.content, { width: width - 6 }) : [];
   return html`
-    <${Box} width=${PANEL} flexDirection="column" borderStyle="round" borderColor="gray" paddingX=${1} marginRight=${1}>
+    <${Box} width=${width} flexDirection="column" borderStyle="round" borderColor="gray" paddingX=${1} marginRight=${width === PANEL ? 1 : 0}>
       <${Text} bold color="gray">📁 ${words('yourFiles')}<//>
       ${Object.entries(byDir).map(([dir, items]) => html`
         <${Box} key=${dir} flexDirection="column" marginTop=${1}>
