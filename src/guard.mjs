@@ -22,10 +22,11 @@ const NEVER = ['sudo', 'git push', 'git reset', 'git checkout', 'git switch', 'g
 const NEVER_PATHS = ['.env', '.mcp.json', '.git/', '.ssh', 'id_rsa', '.npmrc', '.claude/'];
 
 /**
- * @param {{tool: string, input: any, cwd: string, planApproved: boolean, allow?: string[], deny?: string[]}} call
+ * now: commands allowed before the plan is approved too, like giving the kid something in the game.
+ * @param {{tool: string, input: any, cwd: string, planApproved: boolean, allow?: string[], now?: string[], deny?: string[]}} call
  * @returns {{ok: true} | {ok: false, why: string}}
  */
-export function check({ tool, input = {}, cwd, planApproved, allow = [], deny = [] }) {
+export function check({ tool, input = {}, cwd, planApproved, allow = [], now = [], deny = [] }) {
   if (tool.startsWith('mcp__kidex__')) return yes();
   if (ALWAYS.has(tool)) return yes();
 
@@ -41,12 +42,12 @@ export function check({ tool, input = {}, cwd, planApproved, allow = [], deny = 
     return pathOk(input.file_path ?? input.notebook_path, cwd, denyPaths);
   }
 
-  if (tool === 'Bash') return bashOk(String(input.command ?? ''), { cwd, planApproved, allow, deny, denyPaths });
+  if (tool === 'Bash') return bashOk(String(input.command ?? ''), { cwd, planApproved, allow, now, deny, denyPaths });
 
   return no(`${tool} is not available in Kidex.`);
 }
 
-function bashOk(command, { cwd, planApproved, allow, deny, denyPaths }) {
+function bashOk(command, { cwd, planApproved, allow, now, deny, denyPaths }) {
   if (/\$\(|`/.test(command)) return no('No $( ) or backticks in Kidex: run plain commands.');
   const never = [...NEVER, ...deny.filter(d => d.includes(' ') || !d.includes('/'))];
   for (const bad of never) {
@@ -88,9 +89,12 @@ function bashOk(command, { cwd, planApproved, allow, deny, denyPaths }) {
       if (sneaky) return no(`${words[0]} ${sneaky} is not allowed in Kidex.`);
       continue;
     }
+    // A line break in a word would sneak a second command into a program that reads one per line, like a game console.
+    if (words.some(w => /[\r\n]/.test(w))) return no('One command per line: no line breaks inside a command.');
+    if (startsWithAny(part, now)) continue;
     if (!planApproved) return no('Ask the kid first: call show_plan and wait for a yes before running commands.');
     if (startsWithAny(part, allow)) continue;
-    return no(`Kidex may only run: ${[...allow, ...LOOK].join(', ')}. Run one simple command at a time (no loops).`);
+    return no(`Kidex may only run: ${[...allow, ...now, ...LOOK].join(', ')}. Run one simple command at a time (no loops).`);
   }
   return yes();
 }

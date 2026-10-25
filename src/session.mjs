@@ -3,7 +3,7 @@
 //
 // Events: {type: 'speak', text, step?, kind?} | {type: 'ask', question, choices} | {type: 'plan', summary, steps}
 //   | {type: 'quiz', question, choices, answer, explain} | {type: 'approved'}
-//   | {type: 'activity', emoji, text} | {type: 'done', summary, name, pictures}
+//   | {type: 'activity', emoji, text} | {type: 'done', summary, name, quick, pictures}
 //   | {type: 'file', action: 'read'|'write'|'edit'|'draw', file, isNew?, content?} | {type: 'files', files: [{file, isNew}]}
 //   | {type: 'turn', cost} | {type: 'blocked', why} | {type: 'error', message}
 
@@ -107,9 +107,10 @@ export function createSession({ cwd, config, onEvent }) {
       tool('all_done', 'Finish: tell the child what you made and how to try it, in 1-3 short sentences. name: what you made, in 1-4 words, for the celebration.', {
         summary: z.string(),
         name: z.string().optional(),
-      }, async ({ summary, name }) => {
-        commit(summary);
-        emit({ type: 'done', summary, name, pictures: changedPictures(cwd, startedAt) });
+        quick: z.boolean().optional().describe('true after a quick thing (giving them something, answering a question) rather than building: no party, and Kidex goes back to the start by itself'),
+      }, async ({ summary, name, quick }) => {
+        if (!quick) commit(summary);
+        emit({ type: 'done', summary, name, quick: Boolean(quick), pictures: quick ? [] : changedPictures(cwd, startedAt) });
         return textResult('Told them. Now stop and wait; they may ask for changes.');
       }),
     ],
@@ -118,7 +119,7 @@ export function createSession({ cwd, config, onEvent }) {
   const guard = async input => {
     const r = check({
       tool: input.tool_name, input: input.tool_input ?? {}, cwd, planApproved,
-      allow: config.allow, deny: config.deny,
+      allow: config.allow, now: config.now, deny: config.deny,
     });
     if (!r.ok) emit({ type: 'blocked', why: r.why, tool: input.tool_name });
     else {

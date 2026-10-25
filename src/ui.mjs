@@ -6,7 +6,7 @@ import htm from 'htm';
 import { createSession } from './session.mjs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { text as label, pickChoices, fill, loadSettings, saveSettings } from './config.mjs';
+import { text as label, pickChoices, fill, loadSettings, saveSettings, sessionConfig } from './config.mjs';
 import { abilities, startRecording, transcribe, speak, hush, guessLang, warmUp, chime } from './voice.mjs';
 import { render as renderPicture } from './pictures.mjs';
 import { describe, peek } from './files.mjs';
@@ -61,7 +61,8 @@ const WORDS = {
   notQuite: { en: 'Not quite!', da: 'Ikke helt!' },
   plan: { en: 'The plan', da: 'Planen' },
   // The line at the bottom that says what to do now.
-  guideHome: { en: '👉 Pick with the arrow keys, then press ENTER', da: '👉 Vælg med piletasterne, og tryk ENTER' },
+  guideHome: { en: '👉 Pick with the arrow keys and press ENTER, or press SPACE and say what you want', da: '👉 Vælg med piletasterne og tryk ENTER, eller tryk MELLEMRUM og sig hvad du vil' },
+  sayIt: { en: 'say it', da: 'sig det' },
   guideTurn: { en: '👉 Your turn! Press SPACE and talk', da: '👉 Din tur! Tryk MELLEMRUM og snak' },
   guideChoose: { en: '👉 Your turn! Pick an answer and press ENTER, or press SPACE and talk', da: '👉 Din tur! Vælg et svar og tryk ENTER, eller tryk MELLEMRUM og snak' },
   guidePlan: { en: '👉 Your turn! Is the plan good? 👍 or 👎', da: '👉 Din tur! Er planen god? 👍 eller 👎' },
@@ -133,6 +134,7 @@ export function App({ cwd, config, quiet = false }) {
   const [quiz, setQuiz] = useState(null); // {question, choices, answer, explain, sel, picked}: something to think about while waiting
   const [level, setLevel] = useState(0); // how loud the kid is while recording, 0..1
   const [party, setParty] = useState(null); // {big, name, until}: confetti
+  const [leaving, setLeaving] = useState(null); // after something quick, Kidex goes back to the start at this time
 
   const session = useRef(null);
   const recording = useRef(null);
@@ -204,6 +206,12 @@ export function App({ cwd, config, quiet = false }) {
         break; // the guard's notes are for grown-ups, not the kids
       case 'done':
         say('kidex', e.summary); voice(e.summary);
+        if (e.quick) {
+          // Something quick, like a kit: no party, and back to the start once it's been said, unless the kid goes on.
+          celebrate(false); setQuiz(null); setPrompt({ kind: 'free' }); setBusy(false);
+          setLeaving(Date.now() + 3000 + 70 * e.summary.length);
+          break;
+        }
         setStepAt(Infinity); setQuiz(null); celebrate(true, e.name);
         setPrompt({ kind: 'done', pictures: e.pictures, choices: [`🔍 ${w('how')}`, `🔧 ${w('change')}`, `🏠 ${w('finished')}`] }); setSel(0);
         setBusy(false); break;
@@ -232,9 +240,23 @@ export function App({ cwd, config, quiet = false }) {
     }
     setAction(a); setPick(p); setLines([]); setDrawn([]); setFiles({}); setNow(null); setSteps([]); setStepAt(-1); setQuiz(null); setScreen('chat');
     setPrompt({ kind: 'first' });
-    session.current = createSession({ cwd, config: { ...config, language }, onEvent });
-    say('kidex', w('tell')); voice(w('tell'));
+    session.current = createSession({ cwd, config: sessionConfig(config, a, { language }), onEvent });
+    if (a !== config.talk) { say('kidex', w('tell')); voice(w('tell')); }
   }
+
+  /** SPACE on the start screen: no button, the kid just says what they want, and Claude works out what to do. */
+  function talk() {
+    begin(config.talk, null);
+    toggleMic();
+  }
+
+  // After something quick, back to the start, unless the kid talks or types again first.
+  useEffect(() => {
+    if (leaving === null) return;
+    if (ear !== 'idle' || typing !== null) { setLeaving(null); return; }
+    const t = setTimeout(home, Math.max(0, leaving - Date.now()));
+    return () => clearTimeout(t);
+  }, [leaving, ear, typing]);
 
   /** words: what the kid said or picked; send: what Claude gets, when that should say more. */
   function submit(words, send = words) {
@@ -244,6 +266,7 @@ export function App({ cwd, config, quiet = false }) {
     const l = language === 'auto' ? guessLang(words, langRef.current) : language;
     setLang(l); langRef.current = l;
     say('kid', words);
+    setLeaving(null);
     const was = prompt;
     setPrompt(null); setBusy(true); setActivity(null);
     if (was?.kind === 'first') session.current.start({ action, pick, words, lang: l });
@@ -290,7 +313,7 @@ export function App({ cwd, config, quiet = false }) {
     recording.current?.cancel?.(); setEar('idle');
     await session.current?.stop();
     session.current = null;
-    setScreen('home'); setSel(first); setPrompt(null); setBusy(false); setActivity(null); setOnPanel(false); setBig(false);
+    setScreen('home'); setSel(first); setPrompt(null); setBusy(false); setActivity(null); setOnPanel(false); setBig(false); setLeaving(null);
   }
 
   const choices = screen === 'home' ? config.actions.map(a => `${a.emoji} ${label(a.label, lang)}`)
@@ -366,6 +389,7 @@ export function App({ cwd, config, quiet = false }) {
     if (key.escape) { if (screen !== 'home') home(); return; }
     if ((input === 'l' || input === 'L') && ear === 'idle') { nextLanguage(); return; }
     if (screen === 'home' && input === 'q') { exit(); return; }
+    if (screen === 'home' && input === ' ') { talk(); return; }
 
     const n = choices.length;
     // Tiles sit in a grid: left/right move one, up/down a whole row.
@@ -461,7 +485,7 @@ export function App({ cwd, config, quiet = false }) {
     ? [!busy && ear === 'idle' && choices.length > 0 && ['⏎', w('choose')], ear !== 'hearing' && ['␣', ear === 'recording' ? w('done') : w('talk')], ear === 'idle' && ['T', w('type')], strip && ['TAB', panel.title], ['ESC', w('back')]]
     : toPanel
     ? [['ESC', `🧱 ${w('buttons')}`]]
-    : [['⏎', w('choose')], (split || strip) && ['TAB', panel.title], ['L', `${flag.flag} ${flag.name}`], screen === 'home' ? ['Q', w('quit')] : ['ESC', w('back')]];
+    : [['⏎', w('choose')], screen === 'home' && ['␣', `🎤 ${w('sayIt')}`], (split || strip) && ['TAB', panel.title], ['L', `${flag.flag} ${flag.name}`], screen === 'home' ? ['Q', w('quit')] : ['ESC', w('back')]];
   const shownGuide = toPanel || expanded ? null : guide;
 
   return html`

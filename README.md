@@ -124,7 +124,7 @@ node bin/kidex.mjs path/to/project
 
 | Key | |
 | --- | --- |
-| `SPACE` | start talking, `SPACE` again when done |
+| `SPACE` | start talking, `SPACE` again when done. On the start screen it needs no button: the kid just says what they want, and Kidex works out whether to do it at once, answer, or plan and build |
 | `1`–`4`, arrows, `ENTER` | pick a button |
 | `Y` / `N` | yes or no to the plan |
 | `T` | type instead of talking |
@@ -181,6 +181,10 @@ Put a `kidex.json` in the project's folder. For a whole project set up this way,
   "git": { "branch": "kidex/{date}", "commit": true },  // optional: work on a branch, commit at the end
   "explain": { "kit.json": { "en": "What you get to try the mod", "da": "Det du får, når du prøver modet" } },
   "start": "server",                 // optional: the button selected when Kidex opens (default: the first)
+  "talk": {                          // optional: SPACE on the start screen, without a button
+    "prompt": "\"Give me ...\" means ./mc kit <kit> for everyone online.",   // added to what Claude gets
+    "now": ["./mc kit", "./mc cmd give"]   // commands it may run right away, without a plan
+  },
   "actions": [
     { "id": "new", "emoji": "✨", "label": { "en": "Make a mod", "da": "Lav et mod" }, "prompt": "Make a new mod." },
     { "id": "change", "emoji": "🔧", "label": "Change a mod", "pick": "addons/*", "prompt": "Change the mod in addons/{pick}." },
@@ -193,6 +197,7 @@ Put a `kidex.json` in the project's folder. For a whole project set up this way,
 - `explain` (optional) says in kid words what a project's own files are, for the files panel: keys are file names (`"kit.json"`) or folders (`"textures/"`), values a string or `{en, da}`. Without it, files are explained by type (code, settings, picture, test…).
 - `pick` first shows the folders matching `dir/*` as buttons, and `{pick}` is replaced by the chosen one.
 - `run` runs a plain command without Claude, e.g. to open or play something.
+- `talk` is for `SPACE` on the start screen, where the kid presses no button and just says it ("giv mig træ"). Claude works out what they mean: a `now` command (like giving everyone a kit) runs at once with no questions and no plan, and Kidex goes back to the start by itself a moment after saying it's done; a question gets an answer; making or changing something goes the usual way, with a plan. Only ask if it really can't tell. `now` commands are checked like `allow`, but also before the 👍, so list only ones that change no files. `talk` can set its own `model` and `effort`. Projects without it still get `SPACE`, with nothing allowed right away.
 - `panel` runs a program that keeps going, like a dev server with its own full-screen view, in a terminal of its own. It fills the start screen, and the buttons move to a column on the left. Every key goes to the program, except `ESC` when the program has no menu open to close: that goes back to the buttons (`TAB` or the button returns). If the program quits, the button starts it again; it stops when Kidex quits.
 
 Without a `kidex.json`, Kidex shows three general buttons and Claude may only look, not run anything.
@@ -203,7 +208,7 @@ Kids drive an agent that can change files, so Kidex checks every tool call itsel
 
 - **Nothing changes before the 👍.** Until the kid approves the plan, Claude can only read files and run look-only commands (`ls`, `cat`, `git status`, …).
 - **Only the project.** Reading and writing stay inside the project folder, away from `.git/`, `.env`, `.claude/`, keys, and anything in `deny`.
-- **Only listed commands.** After the 👍, Claude may run the `allow` prefixes and look-only commands. Every part of `a && b | c` must be allowed, and `$(…)`, backticks, and `>` redirects are refused.
+- **Only listed commands.** After the 👍, Claude may run the `allow` prefixes and look-only commands. Before it, only look-only commands, plus `talk.now` when the kid talked from the start screen. Every part of `a && b | c` must be allowed, and `$(…)`, backticks, and `>` redirects are refused.
 - **Never:** `git push`/`commit`/`reset`/`checkout`, `sudo`, `curl`, `ssh`, `docker`, `kill`, web search and web fetch, whatever `allow` says.
 - **A budget.** Each session stops at `budgetUsd`.
 

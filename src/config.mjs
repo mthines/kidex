@@ -24,6 +24,7 @@ export const DEFAULTS = {
   deny: [],
   actions: DEFAULT_ACTIONS,
   start: null, // the id of the button selected when the start screen opens; null: the first
+  talk: { prompt: '', now: [] }, // SPACE on the start screen: the kid just says what they want
   git: { branch: null, commit: false },
 };
 
@@ -42,11 +43,41 @@ export function loadConfig(cwd) {
     ...raw,
     voices: { ...DEFAULTS.voices, ...raw.voices },
     git: { ...DEFAULTS.git, ...raw.git },
+    talk: { ...DEFAULTS.talk, ...raw.talk },
     name: raw.name ?? path.basename(cwd),
     file: fs.existsSync(file) ? file : null,
   };
   config.actions = config.actions.map((a, i) => ({ id: a.id ?? String(i), emoji: a.emoji ?? '⭐', ...a }));
+  config.talk = talkAction(config.talk);
   return config;
+}
+
+const TALK_PROMPT = `The kid pressed space on the start screen and just said what they want, without picking a button. Work out what they mean, and do it:
+- Something a command below does right away (like giving them things in the game): run it at once, with no questions and no show_plan, then call all_done with quick true. Only ask (ask_kid) if you really cannot tell what they mean.
+- Making something new or changing something: do it the usual way (a question or two, show_plan, build, check).
+- A question: answer it with tell_kid in one to three short sentences and change nothing, then call all_done with quick true.`;
+
+/** The action SPACE starts on the start screen: kidex.json's "talk" says what Claude may do right away ("now"). */
+function talkAction(talk) {
+  const now = talk.now ?? [];
+  return {
+    id: 'talk', emoji: '🎤', label: { en: 'Say it', da: 'Sig det' }, ...talk, now,
+    prompt: [
+      TALK_PROMPT,
+      now.length ? `Commands you may run right away, without a plan: ${now.join(', ')}.` : 'There are no commands you may run right away here.',
+      talk.prompt,
+    ].filter(Boolean).join('\n'),
+  };
+}
+
+/** What a session for this action runs with: an action can bring its own commands-right-away, model, and effort. */
+export function sessionConfig(config, action, more) {
+  return {
+    ...config, ...more,
+    now: action?.now ?? [],
+    model: action?.model ?? config.model,
+    effort: action?.effort ?? config.effort,
+  };
 }
 
 // Choices made inside Kidex (like the language), kept per computer, not per project.

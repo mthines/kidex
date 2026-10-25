@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { loadConfig } from '../src/config.mjs';
+import { loadConfig, sessionConfig } from '../src/config.mjs';
 import { abilities, bestVoice, piperModel, MODEL, MODEL_URL, PIPER_PYTHON, PIPER_VOICES, VOICES } from '../src/voice.mjs';
 
 const args = process.argv.slice(2);
@@ -50,14 +50,14 @@ async function headless() {
   const pick = flag('pick');
   const cwd = path.resolve(args[0] ?? '.');
   const config = loadConfig(cwd);
-  const action = config.actions.find(a => a.id === actionId) ?? config.actions[0];
+  const action = config.actions.find(a => a.id === actionId) ?? (actionId === 'talk' ? config.talk : config.actions[0]);
   if (!words) { console.error('kidex run needs --say "what the kid says"'); process.exit(2); }
   const { createSession } = await import('../src/session.mjs');
   let finished;
   const done = new Promise(r => { finished = r; });
   let ok = false;
   const session = createSession({
-    cwd, config, onEvent(e) {
+    cwd, config: sessionConfig(config, action), onEvent(e) {
       console.log(JSON.stringify(e));
       if (e.type === 'ask') setTimeout(() => session.answer(e.choices[0] ?? 'You choose!'));
       if (e.type === 'plan') setTimeout(() => session.answer('👍'));

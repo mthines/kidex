@@ -86,3 +86,15 @@ test('only known tools', () => {
   assert.equal(ok('mcp__kidex__ask_kid', {}), true);
   assert.equal(ok('mcp__other__thing', {}), false);
 });
+
+test('"now" commands run before the yes too, and still only as one plain command', () => {
+  const now = (command, planApproved = false) => check({ ...base, now: ['./mc kit', './mc cmd give'], tool: 'Bash', input: { command }, planApproved }).ok;
+  assert.equal(now('./mc kit wood'), true);
+  assert.equal(now('./mc cmd give @a minecraft:oak_log 64'), true);
+  assert.equal(now('./mc cmd op kid'), false);
+  assert.equal(now('npm run new -- cake'), false);
+  assert.equal(now('./mc kit wood && ./mc restart'), false);
+  assert.equal(now('./mc cmd give @a x 1 "\nop kid"'), false);
+  assert.equal(now('./mc kit wood', true), true);
+  assert.equal(check({ ...base, now: ['./mc kit'], tool: 'Write', input: { file_path: 'a.js' }, planApproved: false }).ok, false);
+});
