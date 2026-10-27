@@ -4,7 +4,7 @@
 // kidex setup               download the speech model (~470 MB) and the Danish Piper voice
 // kidex setup voice [da en]  install Piper, an open-source voice that runs on this Mac (default: da)
 // kidex app [folder] [--name "Minecraft"] [--icon ⛏️] [--color "#5d9b3a"] [--icon-app "Minecraft Bedrock Launcher"] [--command "mc kidex"]
-//           [--terminal kitty|iTerm|Terminal] [--no-dock] [--no-desktop]
+//           [--terminal kitty|iTerm|Terminal] [--font-size 18] [--no-dock] [--no-desktop]
 //                           a Mac app on the Dock and the Desktop that opens Kidex on the folder
 // kidex run [folder] --say "make a cake" [--action new] [--pick name]
 //                           no screen: answers every question with the first
@@ -74,7 +74,7 @@ async function headless() {
 async function app() {
   const { makeApp, addToDock, addToDesktop, defaultTerminal } = await import('../src/launcher.mjs');
   const opts = {
-    name: flag('name'), iconApp: flag('icon-app'), icon: flag('icon'), color: flag('color'), command: flag('command'), terminal: flag('terminal') ?? defaultTerminal(),
+    name: flag('name'), iconApp: flag('icon-app'), icon: flag('icon'), color: flag('color'), command: flag('command'), terminal: flag('terminal') ?? defaultTerminal(), fontSize: flag('font-size'),
     dock: !bool('no-dock'), desktop: !bool('no-desktop'),
   };
   if (process.platform !== 'darwin') { console.error('kidex app makes a Mac app, so it only works on a Mac.'); process.exit(1); }
@@ -85,7 +85,7 @@ async function app() {
   const command = opts.command ?? (spawnSync('sh', ['-lc', 'command -v kidex']).status === 0
     ? 'kidex .' : `node '${path.join(import.meta.dirname, 'kidex.mjs')}' .`);
   try {
-    const made = makeApp({ cwd, name, command, terminal: opts.terminal, icon: opts.icon, color: opts.color, iconApp: opts.iconApp });
+    const made = makeApp({ cwd, name, command, terminal: opts.terminal, fontSize: opts.fontSize, icon: opts.icon, color: opts.color, iconApp: opts.iconApp });
     console.log(`✅ ${made}`);
     if (opts.dock) console.log(addToDock(made) ? '✅ On the Dock' : 'Already on the Dock');
     if (opts.desktop) console.log(addToDesktop(made) ? '✅ On the Desktop' : 'Already on the Desktop');

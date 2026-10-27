@@ -158,6 +158,7 @@ node bin/kidex.mjs app examples/web-toys --name "Web toys" --icon 🎨
 | `--color` | the speech bubble's color, or KIDEX's with `--icon-app` (default: one picked from the name; orange) |
 | `--command` | what to run in the folder instead of `kidex .`, like `"mc kidex"` |
 | `--terminal` | `kitty`, `iTerm`, or `Terminal` (default: the first one installed, in that order) |
+| `--font-size` | how big the text is in kitty and Terminal, so kids can read it from a distance (default: 18); iTerm keeps its profile's |
 | `--no-dock`, `--no-desktop` | leave it off the Dock or the Desktop |
 
 The app goes in `~/Applications`. Making it again with the same name replaces it in place, and the Dock and Desktop pick up the new icon. When Kidex quits, the terminal window closes; if Kidex fails, the window stays open to show why. Drawing the icon needs the Xcode Command Line Tools (`xcode-select --install`). The terminal the app opens is the one macOS asks about the microphone.

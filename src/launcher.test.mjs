@@ -20,7 +20,12 @@ test('the AppleScript quotes the line for the terminal it opens', () => {
 
 test('kitty starts a login shell in the folder that runs Kidex and keeps a shell if it fails', () => {
   const s = appleScript({ cwd: '/Users/me/My mods', command: 'mc kidex', terminal: 'kitty', shell: '/bin/zsh' });
-  assert.equal(s, `do shell script "open -na kitty --args --directory '/Users/me/My mods' '/bin/zsh' -lic 'mc kidex || exec '\\\\''/bin/zsh'\\\\'' -l'"`);
+  assert.equal(s, `do shell script "open -na kitty --args -o font_size=18 --directory '/Users/me/My mods' '/bin/zsh' -lic 'mc kidex || exec '\\\\''/bin/zsh'\\\\'' -l'"`);
+});
+
+test('the text is big, or as big as asked', () => {
+  assert.match(appleScript({ cwd: '/a', terminal: 'kitty', fontSize: '24' }), /-o font_size=24 /);
+  assert.match(appleScript({ cwd: '/a', terminal: 'Terminal' }), /set font size of t to 18/);
 });
 
 test('each name keeps its color', () => {

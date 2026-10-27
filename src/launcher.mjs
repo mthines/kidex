@@ -19,12 +19,18 @@ export function shellLine({ cwd, command }) {
   return `cd ${sh(cwd)} && ${command ?? 'kidex .'} && exit`;
 }
 
-/** AppleScript that opens one terminal window running Kidex in the user's own shell, so PATH is set up. */
-export function appleScript({ cwd, command, terminal, shell = process.env.SHELL || '/bin/zsh' }) {
+// Big text, so kids can read it from the sofa: about kitty's 11 zoomed in four times.
+export const FONT_SIZE = 18;
+
+/**
+ * AppleScript that opens one terminal window running Kidex in the user's own shell, so PATH is set up.
+ * The text is fontSize big in kitty and Terminal; iTerm keeps its profile's.
+ */
+export function appleScript({ cwd, command, terminal, fontSize = FONT_SIZE, shell = process.env.SHELL || '/bin/zsh' }) {
   if (terminal === 'kitty') {
     // kitty has no AppleScript: start a new kitty running a login shell; if Kidex fails, a shell stays to show why.
     const run = `${command ?? 'kidex .'} || exec ${sh(shell)} -l`;
-    return `do shell script ${as(`open -na kitty --args --directory ${sh(cwd)} ${sh(shell)} -lic ${sh(run)}`)}`;
+    return `do shell script ${as(`open -na kitty --args -o font_size=${Number(fontSize) || FONT_SIZE} --directory ${sh(cwd)} ${sh(shell)} -lic ${sh(run)}`)}`;
   }
   const line = shellLine({ cwd, command });
   if (terminal === 'iTerm') {
@@ -43,14 +49,15 @@ end tell`;
   }
   return `tell application "Terminal"
   if it is running then
-    do script ${as(line)}
+    set t to do script ${as(line)}
   else
     activate
     repeat until (count of windows) > 0
       delay 0.1
     end repeat
-    do script ${as(line)} in window 1
+    set t to do script ${as(line)} in window 1
   end if
+  set font size of t to ${Number(fontSize) || FONT_SIZE}
   activate
 end tell`;
 }
@@ -136,13 +143,13 @@ function run(cmd, args, what) {
 }
 
 /** Builds <dir>/<name>.app; returns its path. */
-export function makeApp({ cwd, name, command, terminal = defaultTerminal(), icon, color, iconApp, dir = path.join(os.homedir(), 'Applications') }) {
+export function makeApp({ cwd, name, command, terminal = defaultTerminal(), fontSize, icon, color, iconApp, dir = path.join(os.homedir(), 'Applications') }) {
   const app = path.join(dir, `${appName(name)}.app`);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kidex-app-'));
   try {
     fs.mkdirSync(dir, { recursive: true });
     const script = path.join(tmp, 'open.applescript');
-    fs.writeFileSync(script, appleScript({ cwd, command, terminal }));
+    fs.writeFileSync(script, appleScript({ cwd, command, terminal, fontSize }));
     const built = path.join(tmp, 'built.app');
     run('osacompile', ['-o', built, script], 'Making the app');
     const iconset = path.join(tmp, 'icon.iconset');
